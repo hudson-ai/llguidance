@@ -23,6 +23,7 @@ pub use derivre;
 pub mod ffi;
 
 mod grammar_builder;
+mod substring;
 mod json;
 #[cfg(feature = "jsonschema_validation")]
 mod json_validation;
