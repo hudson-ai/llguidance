@@ -1,12 +1,14 @@
 use std::fmt::Display;
 use std::{borrow::Cow, sync::Arc};
 
-use llguidance_parser::api::ParserLimits;
+use llguidance_parser::api::{GrammarWithLexer, ParserLimits};
 use llguidance_parser::toktrie::{
     self, InferenceCapabilities, TokRxInfo, TokTrie, TokenId, TokenizerEnv,
 };
 use llguidance_parser::{api::TopLevelGrammar, output::ParserOutput, TokenParser};
-use llguidance_parser::{Constraint, JsonCompileOptions, Logger};
+use llguidance_parser::{
+    lark_to_llguidance, Constraint, GrammarBuilder, JsonCompileOptions, Logger,
+};
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -78,7 +80,7 @@ impl LLInterpreter {
         self.inner.process_prompt(prompt)
     }
 
-    fn mid_process(&mut self, py: Python<'_>) -> PyResult<(Option<Cow<[u8]>>, String)> {
+    fn compute_mask(&mut self, py: Python<'_>) -> PyResult<(Option<Cow<[u8]>>, String)> {
         let r = py
             .allow_threads(|| self.inner.compute_mask())
             .map_err(val_error)?
@@ -108,19 +110,19 @@ impl LLInterpreter {
         }
     }
 
-    fn advance_parser(&mut self, sampled_token: Option<TokenId>) -> PyResult<(u32, Vec<TokenId>)> {
+    fn commit_token(
+        &mut self,
+        sampled_token: Option<TokenId>,
+    ) -> PyResult<(u32, Vec<TokenId>)> {
         let pres = self.inner.commit_token(sampled_token).map_err(val_error)?;
 
         if pres.stop {
-            // let the next mid_process() call handle it
-            return Ok((0, vec![]));
+            // inner.commit_token() only returns stop, when compute_mask()
+            // had already returned stop
+            Ok((0, vec![]))
+        } else {
+            Ok((pres.backtrack, pres.ff_tokens))
         }
-
-        Ok((pres.backtrack, pres.ff_tokens))
-    }
-
-    fn post_process(&mut self, sampled_token: Option<TokenId>) -> PyResult<(u32, Vec<TokenId>)> {
-        self.advance_parser(sampled_token)
     }
 
     fn has_pending_stop(&self) -> bool {
@@ -246,7 +248,7 @@ impl TokenizerEnv for LLTokenizer {
 struct JsonCompiler {
     item_separator: String,
     key_separator: String,
-    whitespace_flexible: bool
+    whitespace_flexible: bool,
 }
 
 #[pymethods]
@@ -254,10 +256,12 @@ impl JsonCompiler {
     #[new]
     #[pyo3(signature = (separators = None, whitespace_flexible = false))]
     fn py_new(separators: Option<(String, String)>, whitespace_flexible: bool) -> Self {
-        let (item_separator, key_separator) = separators.unwrap_or_else(|| if whitespace_flexible {
-            (",".to_owned(), ":".to_owned())
-        } else {
-            (", ".to_owned(), ": ".to_owned())
+        let (item_separator, key_separator) = separators.unwrap_or_else(|| {
+            if whitespace_flexible {
+                (",".to_owned(), ":".to_owned())
+            } else {
+                (", ".to_owned(), ": ".to_owned())
+            }
         });
         JsonCompiler {
             item_separator: item_separator,
@@ -272,17 +276,53 @@ impl JsonCompiler {
             key_separator: self.key_separator.clone(),
             whitespace_flexible: self.whitespace_flexible,
         };
-        let tlg = compile_options.json_to_llg(schema).map_err(val_error)?;
-        let grammar = &tlg.grammars[0];
-        Ok(serde_json::to_string(grammar).map_err(val_error)?)
+        let grammar = compile_options.json_to_llg(schema).map_err(val_error)?;
+        serde_json::to_string(&grammar).map_err(val_error)
     }
+}
 
+#[derive(Clone)]
+#[pyclass]
+struct LarkCompiler {}
+
+#[pymethods]
+impl LarkCompiler {
+    #[new]
+    fn py_new() -> Self {
+        LarkCompiler {}
+    }
+    fn compile(&self, lark: &str) -> PyResult<String> {
+        let grammar = lark_to_llguidance(lark).map_err(val_error)?;
+        serde_json::to_string(&grammar).map_err(val_error)
+    }
+}
+
+#[derive(Clone)]
+#[pyclass]
+struct RegexCompiler {}
+
+#[pymethods]
+impl RegexCompiler {
+    #[new]
+    fn py_new() -> Self {
+        RegexCompiler {}
+    }
+    fn compile(&self, regex: &str, stop_regex: Option<&str>) -> PyResult<String> {
+        let mut builder = GrammarBuilder::new();
+        builder.add_grammar(GrammarWithLexer::default());
+        let noderef = builder.gen_rx(regex, stop_regex.unwrap_or(""));
+        builder.set_start_node(noderef);
+        let grammar = builder.finalize().map_err(val_error)?;
+        serde_json::to_string(&grammar).map_err(val_error)
+    }
 }
 
 pub(crate) fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<LLTokenizer>()?;
     m.add_class::<LLInterpreter>()?;
     m.add_class::<JsonCompiler>()?;
+    m.add_class::<LarkCompiler>()?;
+    m.add_class::<RegexCompiler>()?;
     Ok(())
 }
 
