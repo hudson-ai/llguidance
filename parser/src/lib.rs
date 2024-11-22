@@ -21,6 +21,8 @@ pub use logging::Logger;
 pub use derivre;
 
 pub mod ffi;
+#[cfg(feature = "rayon")]
+mod ffi_par;
 
 mod grammar_builder;
 mod substring;
@@ -28,7 +30,7 @@ mod json;
 #[cfg(feature = "jsonschema_validation")]
 mod json_validation;
 pub use grammar_builder::{GrammarBuilder, NodeRef};
-pub use json::JsonCompileOptions;
+pub use json::compiler::JsonCompileOptions;
 pub use tokenizer_json::token_bytes_from_tokenizer_json;
 
 #[cfg(feature = "lark")]

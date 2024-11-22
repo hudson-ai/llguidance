@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::{sync::Arc, vec};
 
 use super::{grammar::SymbolProps, lexerspec::LexerSpec, CGrammar, Grammar};
 use crate::api::{
-    GrammarWithLexer, Node, ParserLimits, RegexId, RegexNode, RegexSpec, TopLevelGrammar,
-    DEFAULT_CONTEXTUAL,
+    GrammarId, GrammarWithLexer, Node, ParserLimits, RegexId, RegexNode, RegexSpec,
+    TopLevelGrammar, DEFAULT_CONTEXTUAL,
 };
 use crate::{lark_to_llguidance, loginfo, JsonCompileOptions, Logger};
 use anyhow::{bail, ensure, Result};
@@ -92,12 +93,12 @@ fn grammar_from_json(
             "cannot have both json_schema/lark_grammar and nodes/rx_nodes"
         );
 
-        let mut new_grm = if let Some(json_schema) = input.json_schema.as_ref() {
+        let mut new_grm = if let Some(json_schema) = input.json_schema.take() {
             ensure!(
                 input.lark_grammar.is_none(),
                 "cannot have both json_schema and lark_grammar"
             );
-            let opts = JsonCompileOptions { compact: false };
+            let opts: JsonCompileOptions = JsonCompileOptions::default();
             opts.json_to_llg(json_schema)?
         } else {
             lark_to_llguidance(input.lark_grammar.as_ref().unwrap())?
@@ -304,14 +305,26 @@ pub fn grammars_from_json(
     extra_lexemes: Vec<String>,
 ) -> Result<Vec<Arc<CGrammar>>> {
     let t0 = Instant::now();
-    let grammars = input
+    let mut grammars = input
         .grammars
         .into_iter()
         .map(|g| grammar_from_json(tok_env, &mut limits, g))
         .collect::<Result<Vec<_>>>()?;
 
-    for (_, g) in &grammars {
-        g.validate_grammar_refs(&grammars)?;
+    let mut grammar_by_idx = HashMap::new();
+    for (idx, (_, g)) in grammars.iter().enumerate() {
+        grammar_by_idx.insert(GrammarId::Index(idx), idx);
+        if let Some(n) = g.name() {
+            let n = GrammarId::Name(n.to_string());
+            if grammar_by_idx.contains_key(&n) {
+                bail!("duplicate grammar name: {}", n);
+            }
+            grammar_by_idx.insert(n, idx);
+        }
+    }
+
+    for (_, g) in grammars.iter_mut() {
+        g.validate_grammar_refs(&grammar_by_idx)?;
     }
 
     let t1 = Instant::now();
@@ -327,8 +340,9 @@ pub fn grammars_from_json(
             if log_grammar {
                 writeln!(
                     logger.info_logger(),
-                    "Grammar #{}:\n{:?}\n{:?}\n",
+                    "Grammar #{} {}:\n{:?}\n{:?}\n",
                     idx,
+                    grm.name().unwrap_or(""),
                     lex,
                     grm
                 )
