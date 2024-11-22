@@ -1,5 +1,5 @@
 use std::{collections::HashMap, vec};
-use derivre::{ExprRef, Regex, RegexAst, RegexBuilder};
+use derivre::{ExprRef, RegexAst, RegexBuilder};
 
 #[derive(Debug)]
 struct State {
@@ -86,9 +86,8 @@ impl SuffixAutomaton {
     }
 }
 
-pub fn substring(string: &str) -> Result<Regex, anyhow::Error> {
+pub fn substring(builder: &mut RegexBuilder, string: &str) -> Result<ExprRef, anyhow::Error> {
     let sa = SuffixAutomaton::from_string(string);
-    let mut builder = RegexBuilder::new();
     let mut state_stack = vec![0];
     let mut node_cache: HashMap<usize, ExprRef> = HashMap::new();
 
@@ -130,15 +129,20 @@ pub fn substring(string: &str) -> Result<Regex, anyhow::Error> {
         node_cache.insert(*state_index, expr);
         state_stack.pop();
     }
-    Ok(builder.to_regex(node_cache[&0]))
+    Ok(node_cache[&0])
 }
 
-mod tests {
+#[cfg(test)]
+mod test {
+    use derivre::{JsonQuoteOptions, RegexAst, RegexBuilder};
     use super::substring;
+    const CHAR_REGEX: &str = r#"(\\([\"\\\/bfnrt]|u[a-fA-F0-9]{4})|[^\"\\\x00-\x1F\x7F])"#;
 
     #[test]
     fn test_substring() {
-        let regex = substring("abacaba").unwrap();
+        let mut builder = RegexBuilder::new();
+        let expr = substring(&mut builder, "abacaba").unwrap();
+        let regex = builder.to_regex(expr);
         assert_eq!(regex.clone().is_match(""), true);
         assert_eq!(regex.clone().is_match("acab"), true);
         assert_eq!(regex.clone().is_match("abaca"), true);
@@ -146,5 +150,34 @@ mod tests {
         assert_eq!(regex.clone().is_match("abacaba"), true);
         assert_eq!(regex.clone().is_match("acabab"), false);
         assert_eq!(regex.clone().is_match("cabaca"), false);
+    }
+
+    #[test]
+    fn test_json_escaped() {
+        let mut builder = RegexBuilder::new();
+        let substring_expr = substring(&mut builder, r#"The output was, "All tests passed," which was reassuring."#).unwrap();
+        let json_expr = builder.json_quote(substring_expr, &JsonQuoteOptions::with_unicode()).unwrap();
+        let regex = builder.to_regex(json_expr);
+        assert_eq!(regex.clone().is_match(r#""All tests passed,""#), false);
+        assert_eq!(regex.clone().is_match(r#"\"All tests passed,\""#), true);
+        assert_eq!(regex.clone().is_match(r#"\"All tests"#), true);
+        assert_eq!(regex.clone().is_match(r#""All tests"#), false);
+    }
+
+    #[test]
+    fn test_json_length_constraint_unicode() {
+        let mut builder = RegexBuilder::new();
+        let substring_expr = substring(&mut builder, r#"He said, "和谐发展""#).unwrap();
+        let json_expr = builder.json_quote(substring_expr, &JsonQuoteOptions::with_unicode()).unwrap();
+        let expr = builder.mk(&RegexAst::And(vec![
+            RegexAst::ExprRef(json_expr),
+            RegexAst::Regex(format!("{}{{0,3}}", CHAR_REGEX).to_string())
+        ])).unwrap();
+        let regex = builder.to_regex(expr);
+        assert_eq!(regex.clone().is_match("和谐"), true);
+        assert_eq!(regex.clone().is_match("和谐发"), true);
+        assert_eq!(regex.clone().is_match("和谐发展"), false);
+        assert_eq!(regex.clone().is_match(r#"\"和谐"#), true);
+        assert_eq!(regex.clone().is_match(r#""和谐"#), false);
     }
 }
