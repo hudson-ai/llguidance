@@ -271,7 +271,7 @@ impl JsonCompiler {
             coerce_one_of,
         }
     }
-    fn compile(&self, schema: &str) -> PyResult<String> {
+    fn compile(&self, schema: &str) -> PyResult<PyObject> {
         let schema: Value = serde_json::from_str(schema).map_err(val_error)?;
         let compile_options = JsonCompileOptions {
             item_separator: self.item_separator.clone(),
@@ -280,7 +280,8 @@ impl JsonCompiler {
             coerce_one_of: self.coerce_one_of,
         };
         let grammar = compile_options.json_to_llg(schema).map_err(val_error)?;
-        serde_json::to_string(&grammar).map_err(val_error)
+        let serialized = serde_json::to_string(&grammar).map_err(val_error)?;
+        Python::with_gil(|py| create_pydantic_object(py, serialized))
     }
 }
 
@@ -331,4 +332,16 @@ pub(crate) fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 fn val_error(e: impl Display) -> PyErr {
     PyValueError::new_err(format!("{e}"))
+}
+
+#[pyfunction]
+fn create_pydantic_object(py: Python, serialized_top_level_grammar: String) -> PyResult<PyObject> {
+    // Import the Pydantic model
+    let pydantic_module = py.import_bound("llguidance._schema")?;
+    let my_model_class = pydantic_module.getattr("TopLevelGrammar")?;
+
+    // Create an instance of the Pydantic model
+    let instance = my_model_class.call_method1("model_validate_json", (serialized_top_level_grammar,))?;
+
+    Ok(instance.into())
 }

@@ -4,8 +4,10 @@ version = "0.4.1"
 description = "Bindings for the Low-level Guidance (llguidance) Rust library for use within Guidance"
 requires-python = ">=3.9"
 license = "MIT"
-authors = [{name = "Michal Moskal"}]
-dependencies = []
+authors = [{name = "Michal Moskal"}, {name = "Hudson Cooper"}]
+dependencies = [
+    "pydantic"
+]
 readme = "README.md"
 
 [project.urls]
