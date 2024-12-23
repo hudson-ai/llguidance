@@ -143,7 +143,7 @@ impl Schema {
                 min_length: 0,
                 max_length: None,
                 regex: Some(RegexAst::Literal(s)),
-            } => s,
+            } => &regex_syntax::escape(&serde_json::to_string(s).unwrap()),
             Schema::LiteralBool { value } => {
                 if *value {
                     "true"
