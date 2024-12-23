@@ -3,18 +3,28 @@
 set -e
 cd $(dirname $0)/..
 
-cargo build --locked
-cargo test
+PY_ONLY=0
+if [ "X$1" = "X--py" ] ; then
+    PY_ONLY=1
+    shift
+fi
 
-echo "Running sample_parser"
-(cd sample_parser && ./run.sh >/dev/null)
+if [ "$PY_ONLY" = 0 ] ; then
+    cargo fmt --check
 
-(cd c_sample && make)
+    cargo build --locked
+    cargo test
+
+    echo "Running sample_parser"
+    (cd sample_parser && ./run.sh >/dev/null)
+
+    (cd c_sample && make)
+fi
 
 pip uninstall -y llguidance || :
 
 if test -z "$CONDA_PREFIX" -a -z "$VIRTUAL_ENV" ; then
-    if [ "X$CI" = "Xtrue" ]; then
+    if [ "X$CI" = "Xtrue" -o -f /.dockerenv ]; then
         echo "Building in CI with pip"
         pip install -v -e .
     else
@@ -33,7 +43,9 @@ if test -f ../guidance/tests/unit/test_ll.py ; then
 else
     mkdir -p tmp
     cd tmp
-    PYTEST_FLAGS=-v
+    if [ "X$CI" = "Xtrue" ] ; then
+      PYTEST_FLAGS=-v
+    fi
     if test -f guidance/tests/unit/test_ll.py ; then
         echo "Guidance clone OK"
     else

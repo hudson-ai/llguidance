@@ -366,15 +366,13 @@ impl TokenParser {
         let mut prefix = self.compute_ff_bytes();
 
         // if ff_tokens is enabled, we assume the user has already called compute_ff_tokens()
-        if !self.inference_caps.ff_tokens
-            && !self.parser.grammar().lexer_spec().no_forcing
-            && self.token_env.tokenize_is_canonical()
-        {
+        if !self.inference_caps.ff_tokens && self.can_force_bytes() {
             let (ff_tokens, token_prefix) = self.ff_bytes_to_tokens(prefix);
             if ff_tokens.len() > 0 {
                 let t = ff_tokens[0];
                 infoln!(self, "forcing ff_token by mask: {}", t);
                 let mask = self.tok_trie().singleton_token_set(t);
+                self.last_step_stats = ParserStats::default();
                 return Ok(mask);
             } else {
                 // no tokens, so we got all our bytes back
@@ -384,13 +382,17 @@ impl TokenParser {
 
         let mut allowed_tokens = self.compute_bias(&prefix);
 
+        if let Some(s) = self.parser.get_error() {
+            return Err(self.stop_for_parser_error("", s));
+        }
+
         if self.is_accepting() {
             allowed_tokens.allow_token(self.eos_token);
         }
 
         self.log_final(&prefix, &allowed_tokens);
 
-        if allowed_tokens.num_set() == 0 {
+        if allowed_tokens.is_zero() {
             infoln!(self, "no tokens allowed, stopping");
             return Err(self.stop("", StopReason::NoExtensionBias));
         }
@@ -508,9 +510,17 @@ impl TokenParser {
         self.pending_grm_prefix().len() > 0 || self.parser.currently_forced_bytes().len() > 0
     }
 
+    fn can_force_bytes(&self) -> bool {
+        !self.parser.grammar().lexer_spec().no_forcing && self.token_env.tokenize_is_canonical()
+    }
+
     fn compute_ff_bytes(&mut self) -> Vec<u8> {
         // PERF: in some cases, this may be long
-        let mut new_forced = self.parser.force_bytes().to_vec();
+        if self.can_force_bytes() {
+            self.parser.force_bytes();
+        }
+
+        let mut new_forced = self.parser.currently_forced_bytes().to_vec();
 
         // handle grm_prefix we might have injected
         if self.llm_bytes.len() < self.grm_prefix.len() {

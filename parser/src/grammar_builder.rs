@@ -1,6 +1,7 @@
-use std::{collections::HashMap, sync::atomic::AtomicU32};
-
-use anyhow::{ensure, Result};
+use anyhow::{bail, ensure, Result};
+use derivre::RegexAst;
+use hashbrown::HashMap;
+use std::sync::atomic::AtomicU32;
 
 use crate::api::{
     GenGrammarOptions, GenOptions, GrammarWithLexer, Node, NodeId, NodeProps, RegexId, RegexNode,
@@ -38,6 +39,50 @@ impl RegexBuilder {
             nodes: vec![],
             node_ids: HashMap::new(),
         }
+    }
+
+    pub fn add_ast(&mut self, ast: RegexAst) -> Result<RegexId> {
+        let id = match ast {
+            RegexAst::And(asts) => {
+                let ids = self.add_asts(asts)?;
+                self.and(ids)
+            }
+            RegexAst::Or(asts) => {
+                let ids = self.add_asts(asts)?;
+                self.add_node(RegexNode::Or(ids))
+            }
+            RegexAst::Concat(asts) => {
+                let ids = self.add_asts(asts)?;
+                self.concat(ids)
+            }
+            RegexAst::LookAhead(ast) => {
+                let id = self.add_ast(*ast)?;
+                self.add_node(RegexNode::LookAhead(id))
+            }
+            RegexAst::Not(ast) => {
+                let id = self.add_ast(*ast)?;
+                self.not(id)
+            }
+            RegexAst::Repeat(ast, min, max) => {
+                let id = self.add_ast(*ast)?;
+                self.repeat(id, min, Some(max))
+            }
+            RegexAst::EmptyString => self.add_node(RegexNode::EmptyString),
+            RegexAst::NoMatch => self.add_node(RegexNode::NoMatch),
+            RegexAst::Regex(rx) => self.regex(rx),
+            RegexAst::Literal(s) => self.literal(s),
+            RegexAst::ByteLiteral(bytes) => self.add_node(RegexNode::ByteLiteral(bytes)),
+            RegexAst::Byte(b) => self.add_node(RegexNode::Byte(b)),
+            RegexAst::ByteSet(bs) => self.add_node(RegexNode::ByteSet(bs)),
+            RegexAst::ExprRef(_) => {
+                bail!("ExprRef not supported")
+            }
+        };
+        Ok(id)
+    }
+
+    fn add_asts(&mut self, asts: Vec<RegexAst>) -> Result<Vec<RegexId>> {
+        asts.into_iter().map(|ast| self.add_ast(ast)).collect()
     }
 
     pub fn add_node(&mut self, node: RegexNode) -> RegexId {
@@ -114,18 +159,6 @@ impl RegexBuilder {
 }
 
 impl GrammarBuilder {
-    pub fn from_grammar(grammar: TopLevelGrammar) -> (Self, NodeRef) {
-        assert!(grammar.grammars.len() == 1);
-        let mut builder = Self::new();
-        builder.top_grammar = grammar;
-        builder.nodes = std::mem::take(&mut builder.top_grammar.grammars[0].nodes);
-        builder.next_grammar_id();
-        let prev_root = builder.nodes[0].clone();
-        builder.nodes[0] = builder.placeholder.clone();
-        let prev_root = builder.add_node(prev_root);
-        (builder, prev_root)
-    }
-
     pub fn new() -> Self {
         Self {
             top_grammar: TopLevelGrammar {

@@ -4,15 +4,57 @@
 /// Regular Expression Derivatives Reexamined".
 /// Journal of Functional Programming 19(2):173-190, March 2009.
 /// https://www.khoury.northeastern.edu/home/turon/re-deriv.pdf (retrieved 15 Nov 2024)
-
 use anyhow::{bail, Result};
 use derivre::raw::{DerivCache, ExprSet, NextByteCache, RelevanceCache, VecHashCons};
-use std::{fmt::Debug, u64};
+use serde::{Deserialize, Serialize};
+use std::{
+    fmt::{Debug, Display},
+    u64,
+};
 use toktrie::SimpleVob;
 
 pub use derivre::{AlphabetInfo, ExprRef, NextByte, StateID};
 
 use crate::api::ParserLimits;
+
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub struct LexerStats {
+    pub num_regexps: usize,
+    pub num_ast_nodes: usize,
+    pub num_derived: usize,
+    pub num_derivatives: usize,
+    pub total_fuel_spent: usize,
+    pub num_states: usize,
+    pub num_transitions: usize,
+    pub num_bytes: usize,
+    pub alphabet_size: usize,
+    pub error: bool,
+}
+
+impl Display for LexerStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "regexps: {} with {} nodes (+ {} derived via {} derivatives with total fuel {}), states: {}; transitions: {}; bytes: {}; alphabet size: {} {}",
+            self.num_regexps,
+            self.num_ast_nodes,
+            self.num_derived,
+            self.num_derivatives,
+            self.total_fuel_spent,
+            self.num_states,
+            self.num_transitions,
+            self.num_bytes,
+            self.alphabet_size,
+            if self.error { "ERROR" } else { "" }
+        )
+    }
+}
+
+impl Debug for LexerStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
 
 #[derive(Clone)]
 pub struct RegexVec {
@@ -159,23 +201,23 @@ impl RegexVec {
         let t0 = instant::Instant::now();
         assert!(self.subsume_possible(state));
         let small = self.rx_list[lexeme_idx];
-        self.set_fuel(u64::MAX);
         let mut res = false;
         for (idx, e) in iter_state(&self.rx_sets, state) {
             assert!(!self.lazy[idx]);
-            let pref = self.exprs.mk_prefixes(e);
-            let big = self.exprs.mk_not(pref);
-            let check = self.exprs.mk_and(vec![small, big]);
             let c0 = self.exprs.cost();
-            let not_contained =
-                self.relevance
-                    .is_non_empty_limited(&mut self.exprs, check, budget)?;
-            // println!(
-            //     "{} -> contained={}",
-            //     self.exprs.expr_to_string(check),
-            //     !not_contained
-            // );
-            if !not_contained {
+            let cache_failures = budget > budget0 / 2;
+            let is_contained = self
+                .relevance
+                .is_contained_in_prefixes(
+                    &mut self.exprs,
+                    &mut self.deriv,
+                    small,
+                    e,
+                    budget,
+                    cache_failures,
+                )
+                .unwrap_or(false);
+            if is_contained {
                 res = true;
                 break;
             }
@@ -217,7 +259,6 @@ impl RegexVec {
 
         // For every regex in this state
         for (idx, e) in iter_state(&self.rx_sets, state) {
-
             // If this lexeme is not a match.  (If the derivative at this point is nullable,
             // there is a match, so if it is not nullable, there is no match.)
             if !self.exprs.is_nullable(e) {
@@ -352,22 +393,19 @@ impl RegexVec {
         }
     }
 
-    pub fn stats(&self) -> String {
-        format!(
-            "regexps: {} with {} nodes (+ {} derived via {} derivatives with total fuel {}), states: {}; transitions: {}; bytes: {}; alphabet size: {} {}",
-            self.rx_list.len(),
-            self.num_ast_nodes,
-            self.exprs.len() - self.num_ast_nodes,
-            self.deriv.num_deriv,
-            self.total_fuel_spent(),
-            self.state_descs.len(),
-            self.num_transitions,
-            self.num_bytes(),
-            self.alpha.len(),
-            if self.has_error() {
-                "ERROR"
-            } else { "" }
-        )
+    pub fn stats(&self) -> LexerStats {
+        LexerStats {
+            num_regexps: self.rx_list.len(),
+            num_ast_nodes: self.num_ast_nodes,
+            num_derived: self.exprs.len() - self.num_ast_nodes,
+            num_derivatives: self.deriv.num_deriv,
+            total_fuel_spent: self.total_fuel_spent() as usize,
+            num_states: self.state_descs.len(),
+            num_transitions: self.num_transitions,
+            num_bytes: self.num_bytes(),
+            alphabet_size: self.alpha.len(),
+            error: self.has_error(),
+        }
     }
 
     pub fn print_state_table(&self) {
@@ -514,10 +552,10 @@ impl RegexVec {
 
         let mut vec_desc = vec![];
 
-        let d0 = self.deriv.num_deriv;
+        // let d0 = self.deriv.num_deriv;
         let c0 = self.exprs.cost();
-        let t0 = instant::Instant::now();
-        let mut state_size = 0;
+        // let t0 = instant::Instant::now();
+        // let mut state_size = 0;
 
         for (idx, e) in iter_state(&self.rx_sets, state) {
             let d = self.deriv.derivative(&mut self.exprs, e, b);
@@ -535,31 +573,31 @@ impl RegexVec {
                 }
             };
 
-            state_size += 1;
+            // state_size += 1;
             if d != ExprRef::NO_MATCH {
                 Self::push_rx(&mut vec_desc, idx, d);
             }
         }
 
-        let num_deriv = self.deriv.num_deriv - d0;
+        // let num_deriv = self.deriv.num_deriv - d0;
         let cost = self.exprs.cost() - c0;
         self.fuel = self.fuel.saturating_sub(cost);
         if self.fuel == 0 {
             self.alpha.enter_error_state();
         }
-        if false && cost > 40 {
-            eprintln!(
-                "cost: {:?} {} {} size={}",
-                t0.elapsed() / (cost as u32),
-                num_deriv,
-                cost,
-                state_size
-            );
+        // if false && cost > 40 {
+        //     eprintln!(
+        //         "cost: {:?} {} {} size={}",
+        //         t0.elapsed() / (cost as u32),
+        //         num_deriv,
+        //         cost,
+        //         state_size
+        //     );
 
-            // for (idx, e) in iter_state(&self.rx_sets, state) {
-            //     eprintln!("expr{}: {}", idx, self.exprs.expr_to_string(e));
-            // }
-        }
+        //     // for (idx, e) in iter_state(&self.rx_sets, state) {
+        //     //     eprintln!("expr{}: {}", idx, self.exprs.expr_to_string(e));
+        //     // }
+        // }
         let new_state = self.insert_state(vec_desc);
         self.num_transitions += 1;
         self.state_table[idx] = new_state;
