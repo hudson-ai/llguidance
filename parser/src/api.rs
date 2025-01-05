@@ -257,6 +257,9 @@ pub enum RegexNode {
         #[serde(default)]
         raw_mode: bool,
     },
+    /// MultipleOf(d, s) matches if the input, interpreted as decimal ASCII number, is a multiple of d*10^-s.
+    /// EmptyString is not included.
+    MultipleOf(u32, u32),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

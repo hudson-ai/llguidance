@@ -87,6 +87,7 @@ fn map_rx_nodes(
                     raw_mode,
                 },
             )),
+            RegexNode::MultipleOf(d, s) => Ok(RegexAst::MultipleOf(d, s)),
         }
     }
 }

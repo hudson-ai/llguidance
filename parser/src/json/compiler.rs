@@ -791,7 +791,7 @@ fn always_non_empty(ast: &RegexAst) -> bool {
         | RegexAst::ByteLiteral(_)
         | RegexAst::Byte(_)
         | RegexAst::ByteSet(_)
-        | RegexAst::MultipleOf(_) => true,
+        | RegexAst::MultipleOf(_, _) => true,
 
         RegexAst::And(_)
         | RegexAst::Not(_)

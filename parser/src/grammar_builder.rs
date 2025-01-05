@@ -82,9 +82,7 @@ impl RegexBuilder {
                     allowed_escapes: Some(opts.allowed_escapes.clone()),
                 })
             }
-            RegexAst::MultipleOf(_) => {
-                bail!("MultipleOf not supported")
-            }
+            RegexAst::MultipleOf(d, s) => self.add_node(RegexNode::MultipleOf(d, s)),
             RegexAst::ExprRef(_) => {
                 bail!("ExprRef not supported")
             }
