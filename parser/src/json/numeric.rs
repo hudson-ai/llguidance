@@ -1,6 +1,71 @@
 use anyhow::{anyhow, Result};
 use regex_syntax::escape;
 
+/// coef * 10^-exp
+#[cfg_attr(test, derive(PartialEq))]
+#[derive(Debug, Clone)]
+pub struct Decimal {
+    pub coef: u32,
+    pub exp: u32,
+}
+
+impl Decimal {
+    fn new(coef: u32, exp: u32) -> Self {
+        if coef == 0 {
+            return Decimal { coef: 0, exp: 0 };
+        }
+        // reduce to simplest form
+        let mut coef = coef;
+        let mut exp = exp;
+        while exp > 0 && coef % 10 == 0 {
+            coef /= 10;
+            exp -= 1;
+        }
+        Decimal { coef, exp }
+    }
+
+    pub fn lcm(&self, other: &Decimal) -> Decimal {
+        if self.coef == 0 || other.coef == 0 {
+            return Decimal::new(0, 0);
+        }
+        let a = self.coef * 10u32.pow(other.exp);
+        let b = other.coef * 10u32.pow(self.exp);
+        let coef = (a * b) / gcd(a, b);
+        Decimal::new(coef, self.exp + other.exp)
+    }
+}
+
+impl TryFrom<f64> for Decimal {
+    type Error = anyhow::Error;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        if value < 0.0 {
+            return Err(anyhow!("Value for 'multipleOf' must be non-negative"));
+        }
+        let mut value = value;
+        let mut exp = 0;
+        while value.fract() != 0.0 {
+            value *= 10.0;
+            exp += 1;
+        }
+        if value > u32::MAX as f64 {
+            return Err(anyhow!(
+                "Value for 'multipleOf' has too many digits: {}",
+                value
+            ));
+        }
+        Ok(Decimal::new(value as u32, exp))
+    }
+}
+
+fn gcd(a: u32, b: u32) -> u32 {
+    if b == 0 {
+        a
+    } else {
+        gcd(b, a % b)
+    }
+}
+
 fn mk_or(parts: Vec<String>) -> String {
     if parts.len() == 1 {
         parts[0].clone()
@@ -440,7 +505,7 @@ pub fn rx_float_range(
 }
 
 #[cfg(test)]
-mod test {
+mod test_ranges {
     use super::{rx_float_range, rx_int_range};
     use regex::Regex;
 
@@ -654,6 +719,77 @@ mod test {
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod test_decimal {
+    use super::Decimal;
+
+    #[test]
+    fn test_from_f64() {
+        let cases = vec![
+            (0.0, Decimal { coef: 0, exp: 0 }),
+            (1.0, Decimal { coef: 1, exp: 0 }),
+            (10.0, Decimal { coef: 10, exp: 0 }),
+            (100.0, Decimal { coef: 100, exp: 0 }),
+            (0.1, Decimal { coef: 1, exp: 1 }),
+            (0.01, Decimal { coef: 1, exp: 2 }),
+            (1.1, Decimal { coef: 11, exp: 1 }),
+            (1.01, Decimal { coef: 101, exp: 2 }),
+            (10.1, Decimal { coef: 101, exp: 1 }),
+            (10.01, Decimal { coef: 1001, exp: 2 }),
+            (100.1, Decimal { coef: 1001, exp: 1 }),
+            (
+                100.01,
+                Decimal {
+                    coef: 10001,
+                    exp: 2,
+                },
+            ),
+        ];
+        for (f, d) in cases {
+            assert_eq!(Decimal::try_from(f).unwrap(), d);
+        }
+    }
+
+    #[test]
+    fn test_simplified() {
+        let cases = vec![
+            (Decimal::new(10, 1), Decimal { coef: 1, exp: 0 }),
+            (Decimal::new(100, 2), Decimal { coef: 1, exp: 0 }),
+            (Decimal::new(100, 1), Decimal { coef: 10, exp: 0 }),
+            (Decimal::new(1000, 3), Decimal { coef: 1, exp: 0 }),
+            (Decimal::new(1000, 2), Decimal { coef: 10, exp: 0 }),
+            (Decimal::new(1000, 1), Decimal { coef: 100, exp: 0 }),
+            (Decimal::new(10000, 4), Decimal { coef: 1, exp: 0 }),
+            (Decimal::new(10000, 3), Decimal { coef: 10, exp: 0 }),
+            (Decimal::new(10000, 2), Decimal { coef: 100, exp: 0 }),
+            (Decimal::new(10000, 1), Decimal { coef: 1000, exp: 0 }),
+        ];
+        for (d, s) in cases {
+            assert_eq!(d, s);
+        }
+    }
+
+    #[test]
+    fn test_lcm() {
+        let cases = vec![
+            (2.0, 3.0, 6.0),
+            (0.5, 1.5, 1.5),
+            (0.5, 0.5, 0.5),
+            (0.5, 0.25, 0.5),
+            (0.3, 0.2, 0.6),
+            (0.3, 0.4, 1.2),
+            (0.05, 0.36, 1.8),
+            (0.3, 14.0, 42.0),
+        ];
+        for (a, b, c) in cases {
+            let a = Decimal::try_from(a).unwrap();
+            let b = Decimal::try_from(b).unwrap();
+            let c = Decimal::try_from(c).unwrap();
+            assert_eq!(a.lcm(&b), c);
         }
     }
 }
