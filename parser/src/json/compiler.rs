@@ -4,8 +4,10 @@ use hashbrown::HashMap;
 use indexmap::IndexMap;
 use serde_json::{json, Value};
 
+use super::numeric::Decimal;
 use super::numeric::{rx_float_range, rx_int_range};
 use super::schema::{build_schema, Schema};
+
 use crate::{
     api::{GrammarWithLexer, RegexSpec, TopLevelGrammar},
     GrammarBuilder, NodeRef,
@@ -272,6 +274,7 @@ impl Compiler {
         maximum: Option<f64>,
         exclusive_minimum: bool,
         exclusive_maximum: bool,
+        multiple_of: Option<Decimal>,
     ) -> Result<RegexAst> {
         check_number_bounds(minimum, maximum, exclusive_minimum, exclusive_maximum)?;
         let minimum = match (minimum, exclusive_minimum) {
@@ -305,7 +308,12 @@ impl Compiler {
                 minimum, maximum
             )
         })?;
-        Ok(RegexAst::Regex(rx))
+        let mut ast = RegexAst::Regex(rx);
+        if let Some(d) = multiple_of {
+            // TODO: check for emptiness
+            ast = RegexAst::And(vec![ast, RegexAst::MultipleOf(d.coef, d.exp)]);
+        }
+        Ok(ast)
     }
 
     fn json_number(
@@ -314,6 +322,7 @@ impl Compiler {
         maximum: Option<f64>,
         exclusive_minimum: bool,
         exclusive_maximum: bool,
+        multiple_of: Option<Decimal>,
     ) -> Result<RegexAst> {
         check_number_bounds(minimum, maximum, exclusive_minimum, exclusive_maximum)?;
         let rx = rx_float_range(minimum, maximum, !exclusive_minimum, !exclusive_maximum)
@@ -323,7 +332,12 @@ impl Compiler {
                     minimum, maximum
                 )
             })?;
-        Ok(RegexAst::Regex(rx))
+        let mut ast = RegexAst::Regex(rx);
+        if let Some(d) = multiple_of {
+            // TODO: check for emptiness
+            ast = RegexAst::And(vec![ast, RegexAst::MultipleOf(d.coef, d.exp)]);
+        }
+        Ok(ast)
     }
 
     fn ast_lexeme(&mut self, ast: RegexAst) -> Result<NodeRef> {
@@ -352,7 +366,7 @@ impl Compiler {
         cache!(self.any_cache, {
             let json_any = self.builder.placeholder();
             self.any_cache = Some(json_any); // avoid infinite recursion
-            let num = self.json_number(None, None, false, false).unwrap();
+            let num = self.json_number(None, None, false, false, None).unwrap();
             let options = vec![
                 self.builder.string("null"),
                 self.builder.lexeme(mk_regex(r"true|false")),
@@ -528,6 +542,7 @@ impl Compiler {
                 exclusive_minimum,
                 exclusive_maximum,
                 integer,
+                multiple_of,
             } => {
                 let (minimum, exclusive_minimum) = match (minimum, exclusive_minimum) {
                     (Some(min), Some(xmin)) => {
@@ -554,9 +569,21 @@ impl Compiler {
                     (None, None) => (None, false),
                 };
                 Some(if *integer {
-                    self.json_int(minimum, maximum, exclusive_minimum, exclusive_maximum)?
+                    self.json_int(
+                        minimum,
+                        maximum,
+                        exclusive_minimum,
+                        exclusive_maximum,
+                        multiple_of.clone(),
+                    )?
                 } else {
-                    self.json_number(minimum, maximum, exclusive_minimum, exclusive_maximum)?
+                    self.json_number(
+                        minimum,
+                        maximum,
+                        exclusive_minimum,
+                        exclusive_maximum,
+                        multiple_of.clone(),
+                    )?
                 })
             }
 

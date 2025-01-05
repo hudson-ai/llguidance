@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::{cell::RefCell, mem, rc::Rc};
 
 use super::formats::lookup_format;
+use super::numeric::Decimal;
 
 const DEFAULT_ROOT_URI: &str = "json-schema:///";
 const DEFAULT_DRAFT: Draft = Draft::Draft202012;
@@ -87,6 +88,7 @@ pub enum Schema {
         maximum: Option<f64>,
         exclusive_minimum: Option<f64>,
         exclusive_maximum: Option<f64>,
+        multiple_of: Option<Decimal>,
         integer: bool,
     },
     String {
@@ -257,6 +259,7 @@ impl Schema {
                     exclusive_minimum: emin1,
                     exclusive_maximum: emax1,
                     integer: int1,
+                    multiple_of: mult1,
                 },
                 Schema::Number {
                     minimum: min2,
@@ -264,6 +267,7 @@ impl Schema {
                     exclusive_minimum: emin2,
                     exclusive_maximum: emax2,
                     integer: int2,
+                    multiple_of: mult2,
                 },
             ) => Schema::Number {
                 minimum: opt_max(min1, min2),
@@ -271,6 +275,12 @@ impl Schema {
                 exclusive_minimum: opt_max(emin1, emin2),
                 exclusive_maximum: opt_min(emax1, emax2),
                 integer: int1 || int2,
+                multiple_of: match (mult1, mult2) {
+                    (None, None) => None,
+                    (None, Some(mult)) => Some(mult),
+                    (Some(mult), None) => Some(mult),
+                    (Some(mult1), Some(mult2)) => Some(mult1.lcm(&mult2)),
+                },
             },
             (
                 Schema::String {
@@ -796,6 +806,7 @@ fn compile_const(instance: &Value) -> Result<Schema> {
                 exclusive_minimum: None,
                 exclusive_maximum: None,
                 integer: n.is_i64(),
+                multiple_of: None,
             })
         }
         Value::String(s) => Ok(Schema::String {
@@ -844,6 +855,7 @@ fn compile_type(ctx: &Context, tp: &str, schema: &HashMap<&str, &Value>) -> Resu
             get("exclusiveMinimum"),
             get("exclusiveMaximum"),
             tp == "integer",
+            get("multipleOf"),
         ),
         "string" => compile_string(
             get("minLength"),
@@ -875,6 +887,7 @@ fn compile_numeric(
     exclusive_minimum: Option<&Value>,
     exclusive_maximum: Option<&Value>,
     integer: bool,
+    multiple_of: Option<&Value>,
 ) -> Result<Schema> {
     let minimum = match minimum {
         None => None,
@@ -915,12 +928,23 @@ fn compile_numeric(
             )
         })?),
     };
+    let multiple_of = match multiple_of {
+        None => None,
+        Some(val) => {
+            let f = val.as_f64().ok_or_else(|| {
+                anyhow!("Expected f64 for 'multipleOf', got {}", limited_str(val))
+            })?;
+            // Can discard the sign of f
+            Some(Decimal::try_from(f.abs())?)
+        }
+    };
     Ok(Schema::Number {
         minimum,
         maximum,
         exclusive_minimum,
         exclusive_maximum,
-        integer: integer,
+        integer,
+        multiple_of,
     })
 }
 
