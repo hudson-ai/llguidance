@@ -14,7 +14,7 @@ const DEFAULT_DRAFT: Draft = Draft::Draft202012;
 const TYPES: [&str; 6] = ["null", "boolean", "number", "string", "array", "object"];
 
 // Keywords that are implemented in this module
-const IMPLEMENTED: [&str; 23] = [
+const IMPLEMENTED: [&str; 24] = [
     // Core
     "anyOf",
     "oneOf",
@@ -43,6 +43,7 @@ const IMPLEMENTED: [&str; 23] = [
     "maximum",
     "exclusiveMinimum",
     "exclusiveMaximum",
+    "multipleOf",
 ];
 
 // Keywords that are used for metadata or annotations, not directly driving validation.
