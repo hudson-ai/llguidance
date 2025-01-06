@@ -47,6 +47,8 @@ fn check_number_bounds(
     maximum: Option<f64>,
     exclusive_minimum: bool,
     exclusive_maximum: bool,
+    integer: bool,
+    multiple_of: Option<Decimal>,
 ) -> Result<()> {
     if let (Some(min), Some(max)) = (minimum, maximum) {
         if min > max {
@@ -71,6 +73,70 @@ fn check_number_bounds(
                     minimum_repr, min, maximum_repr, max
                 ),
             }));
+        }
+    }
+    if let Some(d) = multiple_of {
+        if d.coef == 0 {
+            if let Some(min) = minimum {
+                if min > 0.0 || (exclusive_minimum && min >= 0.0) {
+                    return Err(anyhow!(UnsatisfiableSchemaError {
+                        message: format!(
+                            "minimum ({}) is greater than 0, but multipleOf is 0",
+                            min
+                        ),
+                    }));
+                }
+            };
+            if let Some(max) = maximum {
+                if max < 0.0 || (exclusive_maximum && max <= 0.0) {
+                    return Err(anyhow!(UnsatisfiableSchemaError {
+                        message: format!("maximum ({}) is less than 0, but multipleOf is 0", max),
+                    }));
+                }
+            };
+        }
+        // If interval is not unbounded in at least one direction, check if the range contains a multiple of multipleOf
+        if let (Some(min), Some(max)) = (minimum, maximum) {
+            let step = d.to_f64();
+            // Adjust the range depending on whether it's exclusive or not
+            let min = {
+                let first_num_ge_min = (min / step).ceil() * step;
+                let adjusted_min = if exclusive_minimum && first_num_ge_min == min {
+                    first_num_ge_min + step
+                } else {
+                    first_num_ge_min
+                };
+                if integer {
+                    adjusted_min.ceil()
+                } else {
+                    adjusted_min
+                }
+            };
+            let max = {
+                let first_num_le_max = (max / step).floor() * step;
+                let adjusted_max = if exclusive_maximum && first_num_le_max == max {
+                    first_num_le_max - step
+                } else {
+                    first_num_le_max
+                };
+                if integer {
+                    adjusted_max.floor()
+                } else {
+                    adjusted_max
+                }
+            };
+            if min > max {
+                return Err(anyhow!(UnsatisfiableSchemaError {
+                    message: format!(
+                        "range {}{}, {}{} does not contain a multiple of {}",
+                        if exclusive_minimum { "(" } else { "[" },
+                        min,
+                        max,
+                        if exclusive_maximum { ")" } else { "]" },
+                        step
+                    ),
+                }));
+            }
         }
     }
     Ok(())
@@ -276,7 +342,14 @@ impl Compiler {
         exclusive_maximum: bool,
         multiple_of: Option<Decimal>,
     ) -> Result<RegexAst> {
-        check_number_bounds(minimum, maximum, exclusive_minimum, exclusive_maximum)?;
+        check_number_bounds(
+            minimum,
+            maximum,
+            exclusive_minimum,
+            exclusive_maximum,
+            false,
+            multiple_of.clone(),
+        )?;
         let minimum = match (minimum, exclusive_minimum) {
             (Some(min_val), true) => {
                 if min_val.fract() != 0.0 {
@@ -301,7 +374,6 @@ impl Compiler {
             _ => None,
         }
         .map(|val| val as i64);
-        // TODO: handle errors in rx_int_range; currently it just panics
         let rx = rx_int_range(minimum, maximum).with_context(|| {
             format!(
                 "Failed to generate regex for integer range: min={:?}, max={:?}",
@@ -310,7 +382,6 @@ impl Compiler {
         })?;
         let mut ast = RegexAst::Regex(rx);
         if let Some(d) = multiple_of {
-            // TODO: check for emptiness
             ast = RegexAst::And(vec![ast, RegexAst::MultipleOf(d.coef, d.exp)]);
         }
         Ok(ast)
@@ -324,7 +395,14 @@ impl Compiler {
         exclusive_maximum: bool,
         multiple_of: Option<Decimal>,
     ) -> Result<RegexAst> {
-        check_number_bounds(minimum, maximum, exclusive_minimum, exclusive_maximum)?;
+        check_number_bounds(
+            minimum,
+            maximum,
+            exclusive_minimum,
+            exclusive_maximum,
+            false,
+            multiple_of.clone(),
+        )?;
         let rx = rx_float_range(minimum, maximum, !exclusive_minimum, !exclusive_maximum)
             .with_context(|| {
                 format!(
@@ -334,7 +412,6 @@ impl Compiler {
             })?;
         let mut ast = RegexAst::Regex(rx);
         if let Some(d) = multiple_of {
-            // TODO: check for emptiness
             ast = RegexAst::And(vec![ast, RegexAst::MultipleOf(d.coef, d.exp)]);
         }
         Ok(ast)

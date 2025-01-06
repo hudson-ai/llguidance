@@ -33,6 +33,10 @@ impl Decimal {
         let coef = (a * b) / gcd(a, b);
         Decimal::new(coef, self.exp.max(other.exp))
     }
+
+    pub fn to_f64(&self) -> f64 {
+        self.coef as f64 / 10.0f64.powi(self.exp as i32)
+    }
 }
 
 impl TryFrom<f64> for Decimal {
