@@ -558,6 +558,7 @@ pub fn check_number_bounds(
                     ));
                 }
             };
+            return Ok(());
         }
         // If interval is not unbounded in at least one direction, check if the range contains a multiple of multipleOf
         if let (Some(min), Some(max)) = (minimum, maximum) {
