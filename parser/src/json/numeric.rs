@@ -28,10 +28,10 @@ impl Decimal {
         if self.coef == 0 || other.coef == 0 {
             return Decimal::new(0, 0);
         }
-        let a = self.coef * 10u32.pow(other.exp);
-        let b = other.coef * 10u32.pow(self.exp);
+        let a = self.coef * 10u32.pow(other.exp.saturating_sub(self.exp));
+        let b = other.coef * 10u32.pow(self.exp.saturating_sub(other.exp));
         let coef = (a * b) / gcd(a, b);
-        Decimal::new(coef, self.exp + other.exp)
+        Decimal::new(coef, self.exp.max(other.exp))
     }
 }
 
