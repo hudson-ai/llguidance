@@ -508,6 +508,102 @@ pub fn rx_float_range(
     }
 }
 
+pub fn check_number_bounds(
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+    exclusive_minimum: bool,
+    exclusive_maximum: bool,
+    integer: bool,
+    multiple_of: Option<Decimal>,
+) -> Result<(), String> {
+    if let (Some(min), Some(max)) = (minimum, maximum) {
+        if min > max {
+            return Err(format!(
+                "minimum ({}) is greater than maximum ({})",
+                min, max
+            ));
+        }
+        if min == max && (exclusive_minimum || exclusive_maximum) {
+            let minimum_repr = if exclusive_minimum {
+                "exclusiveMinimum"
+            } else {
+                "minimum"
+            };
+            let maximum_repr = if exclusive_maximum {
+                "exclusiveMaximum"
+            } else {
+                "maximum"
+            };
+            return Err(format!(
+                "{} ({}) is equal to {} ({})",
+                minimum_repr, min, maximum_repr, max
+            ));
+        }
+    }
+    if let Some(d) = multiple_of {
+        if d.coef == 0 {
+            if let Some(min) = minimum {
+                if min > 0.0 || (exclusive_minimum && min >= 0.0) {
+                    return Err(format!(
+                        "minimum ({}) is greater than 0, but multipleOf is 0",
+                        min
+                    ));
+                }
+            };
+            if let Some(max) = maximum {
+                if max < 0.0 || (exclusive_maximum && max <= 0.0) {
+                    return Err(format!(
+                        "maximum ({}) is less than 0, but multipleOf is 0",
+                        max
+                    ));
+                }
+            };
+        }
+        // If interval is not unbounded in at least one direction, check if the range contains a multiple of multipleOf
+        if let (Some(min), Some(max)) = (minimum, maximum) {
+            let step = d.to_f64();
+            // Adjust the range depending on whether it's exclusive or not
+            let min = {
+                let first_num_ge_min = (min / step).ceil() * step;
+                let adjusted_min = if exclusive_minimum && first_num_ge_min == min {
+                    first_num_ge_min + step
+                } else {
+                    first_num_ge_min
+                };
+                if integer {
+                    adjusted_min.ceil()
+                } else {
+                    adjusted_min
+                }
+            };
+            let max = {
+                let first_num_le_max = (max / step).floor() * step;
+                let adjusted_max = if exclusive_maximum && first_num_le_max == max {
+                    first_num_le_max - step
+                } else {
+                    first_num_le_max
+                };
+                if integer {
+                    adjusted_max.floor()
+                } else {
+                    adjusted_max
+                }
+            };
+            if min > max {
+                return Err(format!(
+                    "range {}{}, {}{} does not contain a multiple of {}",
+                    if exclusive_minimum { "(" } else { "[" },
+                    min,
+                    max,
+                    if exclusive_maximum { ")" } else { "]" },
+                    step
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod test_ranges {
     use super::{rx_float_range, rx_int_range};
@@ -794,6 +890,113 @@ mod test_decimal {
             let b = Decimal::try_from(b).unwrap();
             let c = Decimal::try_from(c).unwrap();
             assert_eq!(a.lcm(&b), c);
+        }
+    }
+}
+
+#[cfg(test)]
+mod test_number_bounds {
+    use super::{check_number_bounds, Decimal};
+
+    struct Case {
+        minimum: Option<f64>,
+        maximum: Option<f64>,
+        exclusive_minimum: bool,
+        exclusive_maximum: bool,
+        integer: bool,
+        multiple_of: Option<Decimal>,
+        ok: bool,
+    }
+
+    #[test]
+    fn test_check_number_bounds() {
+        let cases = vec![
+            Case {
+                minimum: Some(5.5),
+                maximum: Some(6.0),
+                exclusive_minimum: false,
+                exclusive_maximum: false,
+                integer: false,
+                multiple_of: Decimal::try_from(0.5).ok(),
+                ok: true,
+            },
+            Case {
+                minimum: Some(5.5),
+                maximum: Some(6.0),
+                exclusive_minimum: true,
+                exclusive_maximum: false,
+                integer: false,
+                multiple_of: Decimal::try_from(0.5).ok(),
+                ok: true,
+            },
+            Case {
+                minimum: Some(5.5),
+                maximum: Some(6.0),
+                exclusive_minimum: false,
+                exclusive_maximum: true,
+                integer: false,
+                multiple_of: Decimal::try_from(0.5).ok(),
+                ok: true,
+            },
+            Case {
+                minimum: Some(5.5),
+                maximum: Some(6.0),
+                exclusive_minimum: true,
+                exclusive_maximum: true,
+                integer: false,
+                multiple_of: Decimal::try_from(0.5).ok(),
+                ok: false,
+            },
+            Case {
+                minimum: Some(5.5),
+                maximum: Some(6.0),
+                exclusive_minimum: false,
+                exclusive_maximum: false,
+                integer: true,
+                multiple_of: Decimal::try_from(0.5).ok(),
+                ok: true,
+            },
+            Case {
+                minimum: Some(5.5),
+                maximum: Some(6.0),
+                exclusive_minimum: true,
+                exclusive_maximum: false,
+                integer: true,
+                multiple_of: Decimal::try_from(0.5).ok(),
+                ok: true,
+            },
+            Case {
+                minimum: Some(5.5),
+                maximum: Some(6.0),
+                exclusive_minimum: false,
+                exclusive_maximum: true,
+                integer: true,
+                multiple_of: Decimal::try_from(0.5).ok(),
+                ok: false,
+            },
+            Case {
+                minimum: Some(5.5),
+                maximum: Some(6.0),
+                exclusive_minimum: true,
+                exclusive_maximum: true,
+                integer: true,
+                multiple_of: Decimal::try_from(0.5).ok(),
+                ok: false,
+            },
+        ];
+        for case in cases {
+            assert_eq!(
+                check_number_bounds(
+                    case.minimum,
+                    case.maximum,
+                    case.exclusive_minimum,
+                    case.exclusive_maximum,
+                    case.integer,
+                    case.multiple_of
+                )
+                .is_ok(),
+                case.ok
+            );
         }
     }
 }

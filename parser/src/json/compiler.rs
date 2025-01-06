@@ -4,8 +4,7 @@ use hashbrown::HashMap;
 use indexmap::IndexMap;
 use serde_json::{json, Value};
 
-use super::numeric::Decimal;
-use super::numeric::{rx_float_range, rx_int_range};
+use super::numeric::{check_number_bounds, rx_float_range, rx_int_range, Decimal};
 use super::schema::{build_schema, Schema};
 
 use crate::{
@@ -41,106 +40,6 @@ impl std::fmt::Display for UnsatisfiableSchemaError {
 }
 
 const CHAR_REGEX: &str = r#"(\\([\"\\\/bfnrt]|u[a-fA-F0-9]{4})|[^\"\\\x00-\x1F\x7F])"#;
-
-fn check_number_bounds(
-    minimum: Option<f64>,
-    maximum: Option<f64>,
-    exclusive_minimum: bool,
-    exclusive_maximum: bool,
-    integer: bool,
-    multiple_of: Option<Decimal>,
-) -> Result<()> {
-    if let (Some(min), Some(max)) = (minimum, maximum) {
-        if min > max {
-            return Err(anyhow!(UnsatisfiableSchemaError {
-                message: format!("minimum ({}) is greater than maximum ({})", min, max),
-            }));
-        }
-        if min == max && (exclusive_minimum || exclusive_maximum) {
-            let minimum_repr = if exclusive_minimum {
-                "exclusiveMinimum"
-            } else {
-                "minimum"
-            };
-            let maximum_repr = if exclusive_maximum {
-                "exclusiveMaximum"
-            } else {
-                "maximum"
-            };
-            return Err(anyhow!(UnsatisfiableSchemaError {
-                message: format!(
-                    "{} ({}) is equal to {} ({})",
-                    minimum_repr, min, maximum_repr, max
-                ),
-            }));
-        }
-    }
-    if let Some(d) = multiple_of {
-        if d.coef == 0 {
-            if let Some(min) = minimum {
-                if min > 0.0 || (exclusive_minimum && min >= 0.0) {
-                    return Err(anyhow!(UnsatisfiableSchemaError {
-                        message: format!(
-                            "minimum ({}) is greater than 0, but multipleOf is 0",
-                            min
-                        ),
-                    }));
-                }
-            };
-            if let Some(max) = maximum {
-                if max < 0.0 || (exclusive_maximum && max <= 0.0) {
-                    return Err(anyhow!(UnsatisfiableSchemaError {
-                        message: format!("maximum ({}) is less than 0, but multipleOf is 0", max),
-                    }));
-                }
-            };
-        }
-        // If interval is not unbounded in at least one direction, check if the range contains a multiple of multipleOf
-        if let (Some(min), Some(max)) = (minimum, maximum) {
-            let step = d.to_f64();
-            // Adjust the range depending on whether it's exclusive or not
-            let min = {
-                let first_num_ge_min = (min / step).ceil() * step;
-                let adjusted_min = if exclusive_minimum && first_num_ge_min == min {
-                    first_num_ge_min + step
-                } else {
-                    first_num_ge_min
-                };
-                if integer {
-                    adjusted_min.ceil()
-                } else {
-                    adjusted_min
-                }
-            };
-            let max = {
-                let first_num_le_max = (max / step).floor() * step;
-                let adjusted_max = if exclusive_maximum && first_num_le_max == max {
-                    first_num_le_max - step
-                } else {
-                    first_num_le_max
-                };
-                if integer {
-                    adjusted_max.floor()
-                } else {
-                    adjusted_max
-                }
-            };
-            if min > max {
-                return Err(anyhow!(UnsatisfiableSchemaError {
-                    message: format!(
-                        "range {}{}, {}{} does not contain a multiple of {}",
-                        if exclusive_minimum { "(" } else { "[" },
-                        min,
-                        max,
-                        if exclusive_maximum { ")" } else { "]" },
-                        step
-                    ),
-                }));
-            }
-        }
-    }
-    Ok(())
-}
 
 struct Compiler {
     builder: GrammarBuilder,
@@ -349,7 +248,12 @@ impl Compiler {
             exclusive_maximum,
             false,
             multiple_of.clone(),
-        )?;
+        )
+        .map_err(|e| {
+            anyhow!(UnsatisfiableSchemaError {
+                message: e.to_string(),
+            })
+        })?;
         let minimum = match (minimum, exclusive_minimum) {
             (Some(min_val), true) => {
                 if min_val.fract() != 0.0 {
@@ -402,7 +306,12 @@ impl Compiler {
             exclusive_maximum,
             false,
             multiple_of.clone(),
-        )?;
+        )
+        .map_err(|e| {
+            anyhow!(UnsatisfiableSchemaError {
+                message: e.to_string(),
+            })
+        })?;
         let rx = rx_float_range(minimum, maximum, !exclusive_minimum, !exclusive_maximum)
             .with_context(|| {
                 format!(
