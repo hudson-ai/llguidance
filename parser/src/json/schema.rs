@@ -2,8 +2,9 @@ use anyhow::{anyhow, bail, Result};
 use derivre::RegexAst;
 use hashbrown::{HashMap, HashSet};
 use indexmap::{IndexMap, IndexSet};
-use referencing::{Draft, Registry, Resolver, ResourceRef};
+use referencing::{Draft, Registry, Resolver, Resource, ResourceRef, Retrieve};
 use serde_json::Value;
+use std::any::type_name_of_val;
 use std::{cell::RefCell, mem, rc::Rc};
 
 use super::formats::lookup_format;
@@ -550,11 +551,32 @@ impl<'a> Context<'a> {
     }
 }
 
+#[derive(Clone)]
+pub struct RetrieveWrapper(pub Rc<dyn Retrieve>);
+impl RetrieveWrapper {
+    pub fn new(retrieve: Rc<dyn Retrieve>) -> Self {
+        RetrieveWrapper(retrieve)
+    }
+}
+impl AsRef<dyn Retrieve> for RetrieveWrapper {
+    fn as_ref(&self) -> &(dyn Retrieve + 'static) {
+        self.0.as_ref()
+    }
+}
+impl std::fmt::Debug for RetrieveWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", type_name_of_val(&self.0))
+    }
+}
+
 fn draft_for(value: &Value) -> Draft {
     DEFAULT_DRAFT.detect(value).unwrap_or(DEFAULT_DRAFT)
 }
 
-pub fn build_schema(contents: Value) -> Result<(Schema, HashMap<String, Schema>)> {
+pub fn build_schema(
+    contents: Value,
+    retriever: &Option<RetrieveWrapper>,
+) -> Result<(Schema, HashMap<String, Schema>)> {
     if let Some(b) = contents.as_bool() {
         if b {
             return Ok((Schema::Any, HashMap::new()));
@@ -567,7 +589,18 @@ pub fn build_schema(contents: Value) -> Result<(Schema, HashMap<String, Schema>)
     let resource = draft.create_resource(contents);
     let base_uri = resource.id().unwrap_or(DEFAULT_ROOT_URI).to_string();
 
-    let registry = Registry::try_new(&base_uri, resource)?;
+    let registry = {
+        // Weirdly no apparent way to instantiate a new registry with a retriever, so we need to
+        // make an empty one and then add the retriever + resource that may depend on said retriever
+        let empty_registry =
+            Registry::try_from_resources(std::iter::empty::<(String, Resource)>())?;
+        let retriever = if let Some(wrapper) = retriever {
+            wrapper.as_ref()
+        } else {
+            &referencing::DefaultRetriever
+        };
+        empty_registry.try_with_resource_and_retriever(&base_uri, resource, retriever)?
+    };
 
     let resolver = registry.try_resolver(&base_uri)?;
     let ctx = Context {

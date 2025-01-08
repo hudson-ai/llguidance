@@ -2,10 +2,11 @@ use anyhow::{anyhow, Context, Result};
 use derivre::{JsonQuoteOptions, RegexAst};
 use hashbrown::HashMap;
 use indexmap::IndexMap;
+use referencing::Retrieve;
 use serde_json::{json, Value};
 
 use super::numeric::{check_number_bounds, rx_float_range, rx_int_range, Decimal};
-use super::schema::{build_schema, Schema};
+use super::schema::{build_schema, RetrieveWrapper, Schema};
 
 use crate::{
     api::{GrammarWithLexer, RegexSpec, TopLevelGrammar},
@@ -22,6 +23,7 @@ pub struct JsonCompileOptions {
     pub key_separator: String,
     pub whitespace_flexible: bool,
     pub coerce_one_of: bool,
+    pub retriever: Option<RetrieveWrapper>,
 }
 
 fn json_dumps(target: &serde_json::Value) -> String {
@@ -67,11 +69,28 @@ impl Default for JsonCompileOptions {
             key_separator: ":".to_string(),
             whitespace_flexible: true,
             coerce_one_of: false,
+            retriever: None,
         }
     }
 }
 
 impl JsonCompileOptions {
+    pub fn new(
+        item_separator: String,
+        key_separator: String,
+        whitespace_flexible: bool,
+        coerce_one_of: bool,
+        retriever: Option<std::rc::Rc<dyn Retrieve>>,
+    ) -> Self {
+        Self {
+            item_separator,
+            key_separator,
+            whitespace_flexible,
+            coerce_one_of,
+            retriever: retriever.map(RetrieveWrapper::new),
+        }
+    }
+
     pub fn json_to_llg(&self, schema: Value) -> Result<TopLevelGrammar> {
         let mut compiler = Compiler::new(self.clone());
         #[cfg(feature = "jsonschema_validation")]
@@ -117,7 +136,7 @@ impl Compiler {
             ..GrammarWithLexer::default()
         });
 
-        let (compiled_schema, definitions) = build_schema(schema)?;
+        let (compiled_schema, definitions) = build_schema(schema, &self.options.retriever)?;
 
         let root = self.gen_json(&compiled_schema)?;
         self.builder.set_start_node(root);
