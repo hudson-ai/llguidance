@@ -4,8 +4,7 @@ use hashbrown::{HashMap, HashSet};
 use indexmap::{IndexMap, IndexSet};
 use referencing::{Draft, Registry, Resolver, Resource, ResourceRef, Retrieve};
 use serde_json::Value;
-use std::any::type_name_of_val;
-use std::{cell::RefCell, mem, rc::Rc};
+use std::{any::type_name_of_val, cell::RefCell, mem, rc::Rc};
 
 use super::formats::lookup_format;
 use super::numeric::Decimal;
@@ -558,8 +557,9 @@ impl RetrieveWrapper {
         RetrieveWrapper(retrieve)
     }
 }
-impl AsRef<dyn Retrieve> for RetrieveWrapper {
-    fn as_ref(&self) -> &(dyn Retrieve + 'static) {
+impl std::ops::Deref for RetrieveWrapper {
+    type Target = dyn Retrieve;
+    fn deref(&self) -> &Self::Target {
         self.0.as_ref()
     }
 }
@@ -575,7 +575,7 @@ fn draft_for(value: &Value) -> Draft {
 
 pub fn build_schema(
     contents: Value,
-    retriever: &Option<RetrieveWrapper>,
+    retriever: Option<&dyn Retrieve>,
 ) -> Result<(Schema, HashMap<String, Schema>)> {
     if let Some(b) = contents.as_bool() {
         if b {
@@ -594,12 +594,11 @@ pub fn build_schema(
         // make an empty one and then add the retriever + resource that may depend on said retriever
         let empty_registry =
             Registry::try_from_resources(std::iter::empty::<(String, Resource)>())?;
-        let retriever = if let Some(wrapper) = retriever {
-            wrapper.as_ref()
-        } else {
-            &referencing::DefaultRetriever
-        };
-        empty_registry.try_with_resource_and_retriever(&base_uri, resource, retriever)?
+        empty_registry.try_with_resource_and_retriever(
+            &base_uri,
+            resource,
+            retriever.unwrap_or(&referencing::DefaultRetriever),
+        )?
     };
 
     let resolver = registry.try_resolver(&base_uri)?;
@@ -1211,7 +1210,7 @@ fn opt_min<T: PartialOrd>(a: Option<T>, b: Option<T>) -> Option<T> {
 
 #[cfg(test)]
 mod test_retriever {
-    use super::{build_schema, RetrieveWrapper, Schema};
+    use super::{build_schema, Schema};
     use referencing::{Retrieve, Uri};
     use serde_json::{json, Value};
     use std::fmt;
@@ -1258,8 +1257,7 @@ mod test_retriever {
             .into_iter()
             .collect(),
         };
-        let retriever = RetrieveWrapper::new(std::rc::Rc::new(retriever));
-        let (schema, defs) = build_schema(schema, &Some(retriever)).unwrap();
+        let (schema, defs) = build_schema(schema, Some(&retriever)).unwrap();
         match schema {
             Schema::Ref { uri } => {
                 assert_eq!(uri, key);
