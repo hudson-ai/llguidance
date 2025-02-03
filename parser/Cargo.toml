@@ -18,6 +18,7 @@ indexmap = "2.6.0"
 referencing = "0.26.1"
 rayon = { version = "1.10.0", optional = true }
 hashbrown = { version = "0.15.2", features = ["serde"] }
+regex = "1.11.1"
 
 [features]
 default = ["lark", "rayon"]
