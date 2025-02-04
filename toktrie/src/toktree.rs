@@ -554,6 +554,11 @@ impl TokTrie {
         res
     }
 
+    pub fn is_special_token(&self, tok: TokenId) -> bool {
+        let bytes = self.token(tok);
+        bytes.len() > 0 && bytes[0] == TokTrie::SPECIAL_TOKEN_MARKER
+    }
+
     pub fn get_special_token(&self, name: &str) -> Option<TokenId> {
         self.child_at_byte(self.root(), TokTrie::SPECIAL_TOKEN_MARKER)
             .and_then(|n| {

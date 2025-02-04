@@ -1,6 +1,6 @@
 [package]
 name = "llguidance_py"
-version = "0.6.12"
+version = "0.6.15"
 edition = "2021"
 
 [dependencies]
@@ -10,6 +10,7 @@ bytemuck = "1.19.0"
 pyo3 = {version = "0.21.2", features = ["extension-module", "abi3-py39"]}
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.132"
+rayon = "1.10.0"
 
 [lib]
 # See https://github.com/PyO3/pyo3 for details

@@ -10,6 +10,7 @@ class LLTokenizer:
         cls,
         tokenizer: Union[str, TokenizerWrapper],
         n_vocab: Optional[int] = None,
+        eos_token: Optional[TokenId] = None,
         slices: Optional[List[str]] = None,
     ) -> "LLTokenizer":
         """
@@ -62,6 +63,11 @@ class LLTokenizer:
     def decode_bytes(self, tokens: List[int]) -> bytes:
         """
         Decode the tokens into a bytes object.
+        """
+
+    def is_special_token(self, token: int) -> bool:
+        """
+        Check if the token is a special token.
         """
 
 class LLInterpreter:
@@ -140,6 +146,12 @@ class LLInterpreter:
         Returns: a JSON string.
         """
 
+    def unsafe_compute_mask_ptr(self, trg_pointer: int, trg_byte_size: int) -> str:
+        """
+        Perform next parsing step.
+        Returns: a JSON string.
+        """
+
     def commit_token(
         self, sampled_token: Optional[TokenId]
     ) -> Tuple[int, List[TokenId]]:
@@ -208,4 +220,27 @@ class RegexCompiler:
     ) -> str:
         """
         Compile the JSON representation of the AG2 grammar/constraint.
+        """
+
+class LLExecutor:
+    def __new__(
+        cls,
+        num_threads: Optional[int] = None,
+    ) -> "LLExecutor":
+        """
+        Create a new executor.
+        Args:
+            num_threads: int - number of threads to use for parallel execution,
+                or None to use the default number of threads (80% of the available CPUs up to 32)
+        """
+
+    def unsafe_compute_mask_ptr(
+        self,
+        interpreters: List[LLInterpreter],
+        trg_pointer: int,
+        one_mask_byte_size: int,
+    ) -> str:
+        """
+        Perform next parsing step.
+        Returns: a JSON string.
         """

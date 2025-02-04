@@ -1,7 +1,7 @@
 # Syntax of LLGuidance Grammars
 
 LLGuidance supports a variant of syntax used by Python [Lark parsing toolkit](https://github.com/lark-parser/lark).
-We also provide a [gbnf_to_lark.py script](../scripts/gbnf_to_lark.py) to convert from
+We also provide a [gbnf_to_lark.py script](../python/llguidance/gbnf_to_lark.py) to convert from
 [GBNF](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md) format used in
 [llama.cpp](https://github.com/ggerganov/llama.cpp).
 These makes it easier to get started with a new grammar,

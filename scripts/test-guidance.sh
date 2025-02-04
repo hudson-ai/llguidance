@@ -123,6 +123,10 @@ else
 fi
 
 python -m pytest $PYTEST_FLAGS tests/unit/test_ll.py # main test
+
+(cd "$TOP" && python -m pytest $PYTEST_FLAGS python/torch_tests/)
+
 python -m pytest $PYTEST_FLAGS tests/unit/test_[lgmp]*.py tests/unit/library "$@"
+
 
 fi # TEST_PY
