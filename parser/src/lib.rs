@@ -33,7 +33,7 @@ mod grammar_builder;
 mod json;
 #[cfg(feature = "jsonschema_validation")]
 mod json_validation;
-mod substring;
+pub mod substring;
 pub use grammar_builder::{GrammarBuilder, NodeRef};
 pub use json::compiler::JsonCompileOptions;
 pub use stop_controller::StopController;

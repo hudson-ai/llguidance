@@ -1,3 +1,4 @@
+use anyhow::Result;
 use derivre::{ExprRef, RegexAst, RegexBuilder};
 use std::{collections::HashMap, vec};
 
@@ -28,14 +29,9 @@ impl<'a> SuffixAutomaton<'a> {
         }
     }
 
-    fn from_string(s: &'a str, words: bool) -> Self {
+    fn from_string(chunks: Vec<&'a str>) -> Self {
         let mut sa = SuffixAutomaton::new();
-        let tokens = if words {
-            tokenize_words(s)
-        } else {
-            tokenize_chars(s)
-        };
-        for s in tokens.into_iter() {
+        for s in chunks.into_iter() {
             sa.extend(s);
         }
         sa
@@ -87,12 +83,8 @@ impl<'a> SuffixAutomaton<'a> {
     }
 }
 
-pub fn substring(
-    builder: &mut RegexBuilder,
-    string: &str,
-    words: bool,
-) -> Result<ExprRef, anyhow::Error> {
-    let sa = SuffixAutomaton::from_string(string, words);
+pub fn substring(builder: &mut RegexBuilder, chunks: Vec<&str>) -> Result<ExprRef> {
+    let sa = SuffixAutomaton::from_string(chunks);
     let mut state_stack = vec![0];
     let mut node_cache: HashMap<usize, ExprRef> = HashMap::new();
 
@@ -139,8 +131,8 @@ pub fn substring(
     Ok(node_cache[&0])
 }
 
-fn tokenize_chars(input: &str) -> Vec<&str> {
-    let mut tokens = vec![];
+pub fn chunk_into_chars(input: &str) -> Vec<&str> {
+    let mut chunks = vec![];
     let mut char_indices = input.char_indices().peekable();
 
     while let Some((start, _)) = char_indices.next() {
@@ -148,28 +140,57 @@ fn tokenize_chars(input: &str) -> Vec<&str> {
             Some(&(next_index, _)) => next_index,
             None => input.len(),
         };
-        tokens.push(&input[start..end]);
+        chunks.push(&input[start..end]);
     }
 
-    tokens
+    chunks
 }
 
-fn tokenize_words(input: &str) -> Vec<&str> {
-    let rx = regex::Regex::new(r"(\s+|\w+|[^\s\w]+)").unwrap();
-    rx.find_iter(input).map(|m| m.as_str()).collect::<Vec<_>>()
+#[derive(PartialEq)]
+enum TokenType {
+    Whitespace,
+    Word,
+    Other,
+}
+
+fn classify(ch: char) -> TokenType {
+    if ch.is_whitespace() {
+        TokenType::Whitespace
+    } else if ch.is_alphanumeric() || ch == '_' {
+        TokenType::Word
+    } else {
+        TokenType::Other
+    }
+}
+
+pub fn chunk_into_words(input: &str) -> Vec<&str> {
+    if input.is_empty() {
+        return Vec::new();
+    }
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let mut current_type = classify(input.chars().next().unwrap());
+    for (i, ch) in input.char_indices() {
+        let token_type = classify(ch);
+        if token_type != current_type {
+            chunks.push(&input[start..i]);
+            start = i;
+            current_type = token_type;
+        }
+    }
+    chunks.push(&input[start..]);
+    chunks
 }
 
 #[cfg(test)]
 mod test {
-    use crate::substring::tokenize_words;
-
-    use super::{substring, tokenize_chars};
+    use super::{chunk_into_chars, chunk_into_words, substring};
     use derivre::RegexBuilder;
 
     #[test]
     fn test_tokenize_chars() {
         let input = "The quick brown fox jumps over the lazy dog.";
-        let tokens = tokenize_chars(input);
+        let tokens = chunk_into_chars(input);
         assert_eq!(input, tokens.join(""));
         assert_eq!(
             tokens,
@@ -184,7 +205,7 @@ mod test {
     #[test]
     fn test_tokenize_chars_unicode() {
         let input = "빠른 갈색 여우가 게으른 개를 뛰어넘었다.";
-        let tokens = tokenize_chars(input);
+        let tokens = chunk_into_chars(input);
         assert_eq!(input, tokens.join(""));
         assert_eq!(
             tokens,
@@ -198,7 +219,7 @@ mod test {
     #[test]
     fn test_tokenize_words() {
         let input = "The quick brown fox jumps over the lazy dog.";
-        let tokens = tokenize_words(input);
+        let tokens = chunk_into_words(input);
         assert_eq!(input, tokens.join(""));
         assert_eq!(
             tokens,
@@ -212,7 +233,7 @@ mod test {
     #[test]
     fn test_tokenize_words_unicode() {
         let input = "빠른 갈색 여우가 게으른 개를 뛰어넘었다.";
-        let tokens = tokenize_words(input);
+        let tokens = chunk_into_words(input);
         assert_eq!(input, tokens.join(""));
         assert_eq!(
             tokens,
@@ -238,8 +259,7 @@ mod test {
         let mut builder = RegexBuilder::new();
         let expr = substring(
             &mut builder,
-            "The quick brown fox jumps over the lazy dog.",
-            false,
+            chunk_into_chars("The quick brown fox jumps over the lazy dog."),
         )
         .unwrap();
         let regex = builder.to_regex(expr);
@@ -261,8 +281,7 @@ mod test {
         let mut builder = RegexBuilder::new();
         let expr = substring(
             &mut builder,
-            "빠른 갈색 여우가 게으른 개를 뛰어넘었다.",
-            false,
+            chunk_into_chars("빠른 갈색 여우가 게으른 개를 뛰어넘었다."),
         )
         .unwrap();
         let regex = builder.to_regex(expr);
@@ -284,8 +303,7 @@ mod test {
         let mut builder = RegexBuilder::new();
         let expr = substring(
             &mut builder,
-            "The quick brown fox jumps over the lazy dog.",
-            true,
+            chunk_into_words("The quick brown fox jumps over the lazy dog."),
         )
         .unwrap();
         let regex = builder.to_regex(expr);
@@ -307,8 +325,7 @@ mod test {
         let mut builder = RegexBuilder::new();
         let expr = substring(
             &mut builder,
-            "빠른 갈색 여우가 게으른 개를 뛰어넘었다.",
-            true,
+            chunk_into_words("빠른 갈색 여우가 게으른 개를 뛰어넘었다."),
         )
         .unwrap();
         let regex = builder.to_regex(expr);
