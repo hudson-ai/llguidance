@@ -160,7 +160,7 @@ impl RegexBuilder {
         self.add_node(RegexNode::Or(nodes))
     }
 
-    fn finalize(&mut self) -> Vec<RegexNode> {
+    pub fn finalize(&mut self) -> Vec<RegexNode> {
         let r = std::mem::take(&mut self.nodes);
         *self = Self::new();
         r

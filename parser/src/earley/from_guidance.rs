@@ -10,7 +10,7 @@ use crate::api::{
 use crate::earley::lexerspec::{token_ranges_to_string, LexemeClass};
 use crate::{lark_to_llguidance, loginfo, JsonCompileOptions, Logger};
 use anyhow::{anyhow, bail, ensure, Result};
-use derivre::{ExprRef, JsonQuoteOptions, RegexAst};
+use derivre::{ExprRef, JsonQuoteOptions, RegexAst, RegexBuilder};
 use hashbrown::HashMap;
 use instant::Instant;
 use toktrie::TokEnv;
@@ -40,12 +40,11 @@ fn map_rx_refs(rx_refs: &[ExprRef], ids: Vec<RegexId>) -> Result<Vec<RegexAst>> 
     ids.into_iter().map(|id| map_rx_ref(rx_refs, id)).collect()
 }
 
-fn map_rx_nodes(
-    spec: &mut LexerSpec,
+pub fn regex_nodes_to_derivre(
+    builder: &mut RegexBuilder,
     limits: &ParserLimits,
     rx_nodes: Vec<RegexNode>,
 ) -> Result<Vec<ExprRef>> {
-    let builder = &mut spec.regex_builder;
     let mut rx_refs = vec![];
     for node in rx_nodes {
         rx_refs.push(builder.mk(&map_node(&rx_refs, node)?)?);
@@ -159,7 +158,7 @@ fn grammar_from_json(
     lexer_spec.regex_builder.utf8(utf8);
     lexer_spec.regex_builder.unicode(utf8);
 
-    let rx_nodes = map_rx_nodes(lexer_spec, limits, input.rx_nodes)?;
+    let rx_nodes = regex_nodes_to_derivre(&mut lexer_spec.regex_builder, limits, input.rx_nodes)?;
     let skip = match input.greedy_skip_rx {
         Some(rx) => resolve_rx(&rx_nodes, &rx)?,
         _ => RegexAst::NoMatch,
