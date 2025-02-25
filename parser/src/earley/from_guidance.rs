@@ -119,7 +119,13 @@ fn grammar_from_json(
                 input.lark_grammar.is_none(),
                 "cannot have both json_schema and lark_grammar"
             );
-            let opts: JsonCompileOptions = JsonCompileOptions::default();
+            let opts: JsonCompileOptions = json_schema
+                .as_object()
+                .and_then(|obj| obj.get("x-guidance"))
+                .map_or_else(
+                    || Ok(JsonCompileOptions::default()),
+                    |v| serde_json::from_value(v.clone()),
+                )?;
             opts.json_to_llg(json_schema)?
         } else {
             lark_to_llguidance(input.lark_grammar.as_ref().unwrap())?
