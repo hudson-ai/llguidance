@@ -19,17 +19,13 @@ use crate::{
 // TODO: schemastore/src/schemas/json/BizTalkServerApplicationSchema.json - this breaks 1M fuel on lexer, why?!
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct JsonCompileOptions {
-    #[serde(default)]
     pub item_separator: String,
-    #[serde(default)]
     pub key_separator: String,
-    #[serde(default)]
     pub whitespace_flexible: bool,
-    #[serde(default)]
     pub coerce_one_of: bool,
-    #[serde(default, skip_deserializing)]
+    #[serde(skip_deserializing)]
     pub retriever: Option<RetrieveWrapper>,
 }
 
