@@ -6,12 +6,14 @@ class TokenizerWrapper:
     eos_token_id: TokenId
     bos_token_id: Optional[TokenId]
     tokens: Sequence[bytes]
+    special_token_ids: Sequence[int]
 
     def __init__(self, gtokenizer) -> None:
         # these are required by LLTokenizer:
         self.eos_token_id = gtokenizer.eos_token_id
         self.bos_token_id = gtokenizer.bos_token_id
         self.tokens = gtokenizer.tokens
+        self.special_token_ids = getattr(gtokenizer, "special_token_ids", [])
         self.is_tokenizer_wrapper = True
 
         # more private stuff

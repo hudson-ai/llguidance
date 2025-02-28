@@ -463,6 +463,22 @@ impl PyTokenizer {
             .getattr("bos_token_id")?
             .extract::<Option<u32>>()?;
 
+        let special_token_ids = tokenizer
+            .getattr("special_token_ids")?
+            .extract::<Vec<u32>>()?;
+
+        for tok_id in special_token_ids {
+            let tok_ix = tok_id as usize;
+            if let Some(token) = tokens.get_mut(tok_ix) {
+                if token
+                    .first()
+                    .is_none_or(|&first_byte| first_byte != TokTrie::SPECIAL_TOKEN_MARKER)
+                {
+                    token.insert(0, TokTrie::SPECIAL_TOKEN_MARKER);
+                }
+            }
+        }
+
         // we want decode_bytes([EOS]) etc to be empty
         tokens[tok_eos as usize] = vec![];
         // if let Some(t) = tok_bos {
