@@ -1,16 +1,10 @@
-use std::{array, collections::VecDeque, ops::Deref};
+use std::ops::Deref;
 
 use anyhow::{anyhow, bail, Result};
 use indexmap::{IndexMap, IndexSet};
-use serde_json::{value::Index, Map, Value};
-
-use crate::json::schema::Schema;
+use serde_json::Value;
 
 pub trait SchemaStatus: Clone {}
-
-#[derive(Debug, Clone)]
-pub struct Initial {}
-impl SchemaStatus for Initial {}
 
 #[derive(Debug, Clone)]
 pub struct Applying {}
@@ -30,30 +24,50 @@ pub struct SchemaNode<S: SchemaStatus> {
 pub enum SchemaInner<S: SchemaStatus> {
     True,
     False(String),
-    Simple(Simple),
-    Product(Box<Product<S>>),
-    Collection(Box<Collection<S>>),
+    Simple(Simple<S>),
+    Product(Product<S>),
 }
 
 #[derive(Debug, Clone)]
-pub enum Simple {
+pub enum Simple<S: SchemaStatus> {
     Null,
-    Boolean {
-        literal: Option<bool>,
-    },
-    Number {
-        minimum: Option<f64>,
-        maximum: Option<f64>,
-        exclusive_minimum: Option<f64>,
-        exclusive_maximum: Option<f64>,
-        multiple_of: Option<f64>,
-        integer: bool,
-    },
-    String {
-        min_length: usize,
-        max_length: Option<usize>,
-        pattern: Option<String>,
-    },
+    Boolean(Option<bool>),
+    Number(NumberType),
+    String(StringType),
+    Object(ObjectType<S>),
+    Array(ArrayType<S>),
+}
+
+#[derive(Debug, Clone)]
+struct NumberType {
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+    exclusive_minimum: Option<f64>,
+    exclusive_maximum: Option<f64>,
+    multiple_of: Option<f64>,
+    integer: bool,
+}
+
+#[derive(Debug, Clone)]
+struct StringType {
+    min_length: usize,
+    max_length: Option<usize>,
+    pattern: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ObjectType<S: SchemaStatus> {
+    required: IndexSet<String>,
+    properties: IndexMap<String, SchemaNode<S>>,
+    additional_properties: Box<SchemaNode<S>>,
+}
+
+#[derive(Debug, Clone)]
+struct ArrayType<S: SchemaStatus> {
+    min_items: usize,
+    max_items: Option<usize>,
+    prefix_items: Vec<SchemaNode<S>>,
+    items: Box<SchemaNode<S>>,
 }
 
 #[derive(Debug, Clone)]
@@ -62,25 +76,11 @@ pub enum Product<S: SchemaStatus> {
     OneOf(Vec<SchemaNode<S>>),
 }
 
-#[derive(Debug, Clone)]
-pub enum Collection<S: SchemaStatus> {
-    Object {
-        required: IndexSet<String>,
-        properties: IndexMap<String, SchemaNode<S>>,
-        additional_properties: SchemaNode<S>,
-    },
-    Array {
-        min_items: usize,
-        max_items: Option<usize>,
-        prefix_items: Vec<SchemaNode<S>>,
-        items: SchemaNode<S>,
-    },
-}
-
 pub enum Assertion {
     String(StringAssertion),
     Number(NumberAssertion),
-    // Type(TypeAssertion),
+    Object(ObjectAssertion),
+    Array(ArrayAssertion),
 }
 
 pub enum StringAssertion {
@@ -97,6 +97,14 @@ pub enum NumberAssertion {
     ExclusiveMaximum(f64),
     MultipleOf(f64),
     Integer,
+}
+
+pub enum ObjectAssertion {
+    // TODO
+}
+
+pub enum ArrayAssertion {
+    // TODO
 }
 
 #[derive(Debug)]
@@ -121,58 +129,57 @@ const ALL_TYPES: [Type; 6] = [
     Type::Array,
 ];
 
-impl Simple {
-    fn assert(&mut self, assertion: &Assertion) {
-        match (assertion, self) {
-            (
-                Assertion::Number(assertion),
-                Simple::Number {
-                    ref mut minimum,
-                    ref mut maximum,
-                    ref mut exclusive_minimum,
-                    ref mut exclusive_maximum,
-                    ref mut multiple_of,
-                    ref mut integer,
-                },
-            ) => match assertion {
-                NumberAssertion::Minimum(value) => {
-                    *minimum = Some(minimum.map_or(*value, |m| m.max(*value)))
-                }
-                NumberAssertion::Maximum(value) => {
-                    *maximum = Some(maximum.map_or(*value, |m| m.min(*value)))
-                }
-                NumberAssertion::ExclusiveMinimum(value) => {
-                    *exclusive_minimum = Some(exclusive_minimum.map_or(*value, |m| m.min(*value)))
-                }
-                NumberAssertion::ExclusiveMaximum(value) => {
-                    *exclusive_maximum = Some(exclusive_maximum.map_or(*value, |m| m.max(*value)))
-                }
-                NumberAssertion::MultipleOf(value) => todo!("Use decimal with lcm"),
-                NumberAssertion::Integer => {
-                    *integer = true;
-                }
-            },
-            (
-                Assertion::String(assertion),
-                Simple::String {
-                    ref mut min_length,
-                    ref mut max_length,
-                    ref mut pattern,
-                },
-            ) => match assertion {
-                StringAssertion::MinLength(value) => {
-                    *min_length = (*min_length).max(*value);
-                }
-                StringAssertion::MaxLength(value) => {
-                    *max_length = max_length.map_or(Some(*value), |m| Some(m.min(*value)));
-                }
-                StringAssertion::Pattern(_) => todo!(),
-                StringAssertion::Format(_) => todo!(),
-            },
-            _ => {
-                // Non-applicable assertions!
+impl NumberType {
+    fn assert(&mut self, assertion: &NumberAssertion) {
+        match assertion {
+            NumberAssertion::Minimum(value) => {
+                self.minimum = Some(self.minimum.map_or(*value, |m| m.max(*value)))
+            }
+            NumberAssertion::Maximum(value) => {
+                self.maximum = Some(self.maximum.map_or(*value, |m| m.min(*value)))
+            }
+            NumberAssertion::ExclusiveMinimum(value) => {
+                self.exclusive_minimum =
+                    Some(self.exclusive_minimum.map_or(*value, |m| m.min(*value)))
+            }
+            NumberAssertion::ExclusiveMaximum(value) => {
+                self.exclusive_maximum =
+                    Some(self.exclusive_maximum.map_or(*value, |m| m.max(*value)))
+            }
+            NumberAssertion::MultipleOf(value) => todo!("Use decimal with lcm"),
+            NumberAssertion::Integer => {
+                self.integer = true;
             }
         }
+    }
+}
+
+impl StringType {
+    fn assert(&mut self, assertion: &StringAssertion) {
+        match assertion {
+            StringAssertion::MinLength(value) => {
+                self.min_length = self.min_length.max(*value);
+            }
+            StringAssertion::MaxLength(value) => {
+                self.max_length = self
+                    .max_length
+                    .map_or(Some(*value), |m| Some(m.min(*value)));
+            }
+            StringAssertion::Pattern(_) => todo!(),
+            StringAssertion::Format(_) => todo!(),
+        }
+    }
+}
+
+impl ObjectType<Applying> {
+    fn assert(&mut self, assertion: &ObjectAssertion) {
+        todo!()
+    }
+}
+
+impl ArrayType<Applying> {
+    fn assert(&mut self, assertion: &ArrayAssertion) {
+        todo!()
     }
 }
 
@@ -275,7 +282,7 @@ impl SchemaNode<Applying> {
                             Ok(node)
                         })
                         .collect::<Result<Vec<_>>>()?;
-                    self.inner = SchemaInner::Product(Box::new(Product::AnyOf(nodes)));
+                    self.inner = SchemaInner::Product(Product::AnyOf(nodes));
                 }
                 "oneOf" => {
                     let array = value
@@ -289,7 +296,7 @@ impl SchemaNode<Applying> {
                             Ok(node)
                         })
                         .collect::<Result<Vec<_>>>()?;
-                    self.inner = SchemaInner::Product(Box::new(Product::OneOf(nodes)));
+                    self.inner = SchemaInner::Product(Product::OneOf(nodes));
                 }
                 "$ref" => {
                     todo!("Need to resolve reference and apply it in place *if it hasn't been applied yet (recursive)*")
@@ -303,16 +310,42 @@ impl SchemaNode<Applying> {
 
     fn assert(&mut self, assertion: &Assertion) {
         match self.inner {
-            SchemaInner::False(_) => return,
+            SchemaInner::False(_) => {}
             SchemaInner::True => {
                 self.inner = concrete_any();
                 self.assert(assertion);
             }
-            SchemaInner::Simple(ref mut simple) => {
-                simple.assert(assertion);
-            }
-            SchemaInner::Product(_) => todo!(),
-            SchemaInner::Collection(_) => todo!(),
+            SchemaInner::Simple(ref mut simple) => match simple {
+                Simple::Null => {}
+                Simple::Boolean(_) => {}
+                Simple::Number(ref mut number) => {
+                    if let Assertion::Number(assertion) = assertion {
+                        number.assert(assertion);
+                    }
+                }
+                Simple::String(ref mut string) => {
+                    if let Assertion::String(assertion) = assertion {
+                        string.assert(assertion);
+                    }
+                }
+                Simple::Object(ref mut object) => {
+                    if let Assertion::Object(assertion) = assertion {
+                        object.assert(assertion);
+                    }
+                }
+                Simple::Array(ref mut array) => {
+                    if let Assertion::Array(assertion) = assertion {
+                        array.assert(assertion);
+                    }
+                }
+            },
+            SchemaInner::Product(ref mut product) => match product {
+                Product::AnyOf(options) | Product::OneOf(options) => {
+                    for option in options {
+                        option.assert(assertion);
+                    }
+                }
+            },
         }
     }
 
@@ -333,28 +366,17 @@ impl SchemaNode<Applying> {
             SchemaInner::Simple(ref simple) => {
                 for t in types {
                     match (t, simple) {
-                        (Type::String, Simple::String { .. }) => return,
-                        (Type::Number, Simple::Number { .. }) => return,
-                        (Type::Boolean, Simple::Boolean { .. }) => return,
                         (Type::Null, Simple::Null) => return,
+                        (Type::Boolean, Simple::Boolean { .. }) => return,
+                        (Type::Number, Simple::Number { .. }) => return,
+                        (Type::String, Simple::String { .. }) => return,
+                        (Type::Object, Simple::Object { .. }) => return,
+                        (Type::Array, Simple::Array { .. }) => return,
                         _ => {}
                     }
                 }
                 self.inner =
                     SchemaInner::False(format!("Expected one of {:?}, found {:?}", types, simple));
-            }
-            SchemaInner::Collection(ref collection) => {
-                for t in types {
-                    match (t, collection.deref()) {
-                        (Type::Object, Collection::Object { .. }) => return,
-                        (Type::Array, Collection::Array { .. }) => return,
-                        _ => {}
-                    }
-                }
-                self.inner = SchemaInner::False(format!(
-                    "Expected one of {:?}, found {:?}",
-                    types, collection
-                ));
             }
             SchemaInner::Product(ref product) => {
                 todo!()
@@ -379,63 +401,57 @@ impl Product<Applying> {
     }
 }
 
-impl Collection<Applying> {
-    fn assert(&mut self, assertion: &Assertion) {
-        todo!()
-    }
-}
-
 fn concrete_any() -> SchemaInner<Applying> {
-    SchemaInner::Product(Box::new(Product::AnyOf(vec![
+    SchemaInner::Product(Product::AnyOf(vec![
         SchemaNode {
             inner: SchemaInner::Simple(Simple::Null),
             state: Applying {},
         },
         SchemaNode {
-            inner: SchemaInner::Simple(Simple::Boolean { literal: None }),
+            inner: SchemaInner::Simple(Simple::Boolean(None)),
             state: Applying {},
         },
         SchemaNode {
-            inner: SchemaInner::Simple(Simple::Number {
+            inner: SchemaInner::Simple(Simple::Number(NumberType {
                 minimum: None,
                 maximum: None,
                 exclusive_minimum: None,
                 exclusive_maximum: None,
                 multiple_of: None,
                 integer: false,
-            }),
+            })),
             state: Applying {},
         },
         SchemaNode {
-            inner: SchemaInner::Simple(Simple::String {
+            inner: SchemaInner::Simple(Simple::String(StringType {
                 min_length: 0,
                 max_length: None,
                 pattern: None,
-            }),
-            state: Applying {},
-        },
-        SchemaNode {
-            inner: SchemaInner::Collection(Box::new(Collection::Object {
-                required: IndexSet::new(),
-                properties: IndexMap::new(),
-                additional_properties: SchemaNode {
-                    inner: SchemaInner::True,
-                    state: Applying {},
-                },
             })),
             state: Applying {},
         },
         SchemaNode {
-            inner: SchemaInner::Collection(Box::new(Collection::Array {
+            inner: SchemaInner::Simple(Simple::Object(ObjectType {
+                required: IndexSet::new(),
+                properties: IndexMap::new(),
+                additional_properties: Box::new(SchemaNode {
+                    inner: SchemaInner::True,
+                    state: Applying {},
+                }),
+            })),
+            state: Applying {},
+        },
+        SchemaNode {
+            inner: SchemaInner::Simple(Simple::Array(ArrayType {
                 min_items: 0,
                 max_items: None,
                 prefix_items: vec![],
-                items: SchemaNode {
+                items: Box::new(SchemaNode {
                     inner: SchemaInner::True,
                     state: Applying {},
-                },
+                }),
             })),
             state: Applying {},
         },
-    ])))
+    ]))
 }
