@@ -1,6 +1,7 @@
 pub mod compiler;
 mod formats;
 mod numeric;
+mod order;
 mod schema;
 mod shared_context;
 
