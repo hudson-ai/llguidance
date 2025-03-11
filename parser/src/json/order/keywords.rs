@@ -33,7 +33,6 @@ enum Keyword {
 
 #[derive(Debug)]
 enum Assertion {
-    Type(Vec<String>),
     String(StringAssertion),
     Number(NumberAssertion),
     Object(ObjectAssertion),
