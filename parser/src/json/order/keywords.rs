@@ -390,10 +390,13 @@ impl TryFrom<&Map<String, Value>> for SchemaDefinition {
                         })),
                     )));
                 }
+                // Meta and annotations
+                "$anchor" | "$defs" | "definitions" | "$schema" | "$id" | "id" | "$comment"
+                | "title" | "description" | "default" | "readOnly" | "writeOnly" | "examples"
+                | "contentMediaType" | "contentEncoding" => {}
                 _ => todo!(),
             }
         }
-
         Ok(SchemaDefinition { type_, keywords })
     }
 }
