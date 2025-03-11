@@ -4,25 +4,39 @@ use serde_json::{Map, Value};
 use std::collections::HashSet;
 
 #[derive(Debug)]
-enum PreSchema {
+pub enum PreSchema {
     Bool(bool),
     Definition(SchemaDefinition),
 }
 
 #[derive(Debug)]
-struct SchemaDefinition {
-    type_: Option<Type>,
-    keywords: Vec<Keyword>,
+pub struct SchemaDefinition {
+    pub type_: Type,
+    pub keywords: Vec<Keyword>,
 }
 
 #[derive(Debug)]
-struct Type {
-    null: bool,
-    boolean: bool,
-    number: bool,
-    string: bool,
-    array: bool,
-    object: bool,
+pub struct Type {
+    pub null: bool,
+    pub boolean: bool,
+    pub number: bool,
+    pub integer: bool,
+    pub string: bool,
+    pub array: bool,
+    pub object: bool,
+}
+impl Default for Type {
+    fn default() -> Self {
+        Type {
+            null: true,
+            boolean: true,
+            number: true,
+            integer: true,
+            string: true,
+            array: true,
+            object: true,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -397,7 +411,10 @@ impl TryFrom<&Map<String, Value>> for SchemaDefinition {
                 _ => todo!(),
             }
         }
-        Ok(SchemaDefinition { type_, keywords })
+        Ok(SchemaDefinition {
+            type_: type_.unwrap_or_default(),
+            keywords,
+        })
     }
 }
 
@@ -410,6 +427,7 @@ impl TryFrom<&Value> for Type {
             null: false,
             boolean: false,
             number: false,
+            integer: false,
             string: false,
             array: false,
             object: false,
@@ -433,6 +451,7 @@ impl TryFrom<&Value> for Type {
                 "null" => type_.null = true,
                 "boolean" => type_.boolean = true,
                 "number" => type_.number = true,
+                "integer" => type_.integer = true,
                 "string" => type_.string = true,
                 "array" => type_.array = true,
                 "object" => type_.object = true,
