@@ -6,7 +6,6 @@ use crate::{
     infoln, panic_utils, warn, Instant, Logger,
 };
 use anyhow::{ensure, Result};
-use serde_json::json;
 use toktrie::{InferenceCapabilities, SimpleVob, TokEnv, TokenId, INVALID_TOKEN};
 
 #[derive(Clone)]
