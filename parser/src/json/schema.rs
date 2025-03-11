@@ -443,6 +443,72 @@ impl Schema {
             }
         }
     }
+
+    fn apply(self, applicator: (&str, &Value), ctx: &Context) -> Result<Schema> {
+        let mut result = self;
+        let (k, v) = applicator;
+        match k {
+            // TODO: Do const and enum really belong here? Maybe they should always take precedence as they are "literal" constraints?
+            "const" => {
+                let schema = compile_const(v)?;
+                result = result.intersect(schema, &ctx)?
+            }
+            "enum" => {
+                let instances = v
+                    .as_array()
+                    .ok_or_else(|| anyhow!("enum must be an array"))?;
+                let options = instances
+                    .iter()
+                    .map(|instance| compile_const(instance))
+                    .collect::<Result<Vec<_>>>()?;
+                result = result.intersect(Schema::AnyOf { options }, &ctx)?;
+            }
+            "allOf" => {
+                let all_of = v
+                    .as_array()
+                    .ok_or_else(|| anyhow!("allOf must be an array"))?;
+                for value in all_of {
+                    let schema = compile_resource(&ctx, ctx.as_resource_ref(value))?;
+                    result = result.intersect(schema, &ctx)?;
+                }
+            }
+            "anyOf" => {
+                let any_of = v
+                    .as_array()
+                    .ok_or_else(|| anyhow!("anyOf must be an array"))?;
+                let options = any_of
+                    .iter()
+                    .map(|value| compile_resource(&ctx, ctx.as_resource_ref(value)))
+                    .collect::<Result<Vec<_>>>()?;
+                result = result.intersect(Schema::AnyOf { options }, &ctx)?;
+            }
+            "oneOf" => {
+                let one_of = v
+                    .as_array()
+                    .ok_or_else(|| anyhow!("oneOf must be an array"))?;
+                let options = one_of
+                    .iter()
+                    .map(|value| compile_resource(&ctx, ctx.as_resource_ref(value)))
+                    .collect::<Result<Vec<_>>>()?;
+                result = result.intersect(Schema::OneOf { options }, &ctx)?;
+            }
+            "$ref" => {
+                let reference = v
+                    .as_str()
+                    .ok_or_else(|| anyhow!("$ref must be a string, got {}", limited_str(v)))?
+                    .to_string();
+                let uri: String = ctx.normalize_ref(&reference)?;
+                if matches!(result, Schema::Any) {
+                    define_ref(ctx, &uri)?;
+                    result = Schema::Ref { uri };
+                } else {
+                    result = intersect_ref(ctx, &uri, result, false)?;
+                }
+            }
+            _ => bail!("Unknown applicator: {}", applicator.0),
+        };
+        Ok(result)
+    }
 }
 
 #[derive(Clone)]
@@ -513,7 +579,7 @@ fn only_meta_and_annotations(schemadict: &IndexMap<&str, &Value>) -> bool {
     schemadict.keys().all(|k| META_AND_ANNOTATIONS.contains(k))
 }
 
-fn compile_contents_map(ctx: &Context, mut schemadict: IndexMap<&str, &Value>) -> Result<Schema> {
+fn compile_contents_map(ctx: &Context, schemadict: IndexMap<&str, &Value>) -> Result<Schema> {
     ctx.increment()?;
 
     // We don't need to compile the schema if it's just meta and annotations
@@ -532,23 +598,91 @@ fn compile_contents_map(ctx: &Context, mut schemadict: IndexMap<&str, &Value>) -
         bail!("Unimplemented keys: {:?}", unimplemented_keys);
     }
 
+    // Some dummy values to use for properties and prefixItems if we need to apply additionalProperties or items
+    // before we know what they are. Define them here so we can reference them in the loop below without borrow-checker
+    // issues.
+    let dummy_properties = match schemadict.get("properties") {
+        Some(properties) => {
+            let properties = properties
+                .as_object()
+                .ok_or_else(|| anyhow!("properties must be an object"))?;
+            Some(Value::from_iter(
+                properties
+                    .iter()
+                    .map(|(k, _)| (k.as_str(), Value::Bool(true))),
+            ))
+        }
+        None => None,
+    };
+    let dummy_prefix_items = match schemadict.get("prefixItems") {
+        Some(prefix_items) => {
+            let prefix_items = prefix_items
+                .as_array()
+                .ok_or_else(|| anyhow!("prefixItems must be an array"))?;
+            Some(Value::from_iter(
+                prefix_items.iter().map(|_| Value::Bool(true)),
+            ))
+        }
+        None => None,
+    };
+
+    let mut result = Schema::Any;
+    let mut current = HashMap::default();
     let in_place_applicator_kwds = ["const", "enum", "allOf", "anyOf", "oneOf", "$ref"];
-    let mut siblings = HashMap::default();
-    let mut applicators = IndexMap::new();
-    for (k, v) in schemadict.into_iter() {
+    for (k, v) in schemadict.iter() {
         if in_place_applicator_kwds.contains(&k) {
-            applicators.insert(k, v);
+            if !current.is_empty() {
+                if let Some(&types) = schemadict.get("type") {
+                    // Make sure we always give type information to ensure we get the smallest union we can
+                    current.insert("type", types);
+                }
+                let current_schema = compile_contents_simple(
+                    ctx,
+                    std::mem::replace(&mut current, HashMap::default()),
+                )?;
+                result = result.intersect(current_schema, ctx)?;
+            }
+            // Finally apply the applicator
+            result = result.apply((k, v), ctx)?;
         } else if !META_AND_ANNOTATIONS.contains(&k) {
-            siblings.insert(k, v);
+            current.insert(k, v);
+            if *k == "additionalProperties" && !current.contains_key("properties") {
+                // additionalProperties needs to know about properties
+                // Insert a dummy version of properties into current
+                // (not the real deal, as we don't want to intersect it out of order)
+                if let Some(dummy_props) = &dummy_properties {
+                    current.insert("properties", dummy_props);
+                }
+            }
+            if *k == "items" && !current.contains_key("prefixItems") {
+                // items needs to know about prefixItems
+                // Insert a dummy version of prefixItems into current
+                // (not the real deal, as we don't want to intersect it out of order)
+                if let Some(dummy_itms) = &dummy_prefix_items {
+                    current.insert("prefixItems", dummy_itms);
+                }
+            }
         }
     }
+    if !current.is_empty() {
+        if let Some(&types) = schemadict.get("type") {
+            // Make sure we always give type information to ensure we get the smallest union we can
+            current.insert("type", types);
+        }
+        let current_schema =
+            compile_contents_simple(ctx, std::mem::replace(&mut current, HashMap::default()))?;
+        result = result.intersect(current_schema, ctx)?;
+    }
+    Ok(result)
+}
 
-    let mut result = if siblings.is_empty() {
-        Schema::Any
+fn compile_contents_simple(ctx: &Context, schemadict: HashMap<&str, &Value>) -> Result<Schema> {
+    if schemadict.is_empty() {
+        Ok(Schema::Any)
     } else {
-        let types = siblings.remove("type");
+        let types = schemadict.get("type");
         match types {
-            Some(Value::String(tp)) => compile_type(ctx, &tp, &siblings)?,
+            Some(Value::String(tp)) => compile_type(ctx, &tp, &schemadict),
             Some(Value::Array(types)) => {
                 let options = types
                     .iter()
@@ -558,83 +692,14 @@ fn compile_contents_map(ctx: &Context, mut schemadict: IndexMap<&str, &Value>) -
                             .ok_or_else(|| anyhow!("type must be a string"))
                     })
                     .collect::<Result<Vec<_>>>()?;
-                compile_types(ctx, options, &siblings)?
+                compile_types(ctx, options, &schemadict)
             }
-            None => compile_types(ctx, TYPES.to_vec(), &siblings)?,
+            None => compile_types(ctx, TYPES.to_vec(), &schemadict),
             Some(_) => {
                 bail!("type must be a string or array of strings");
             }
         }
-    };
-
-    for (k, v) in applicators {
-        if matches!(result, Schema::Unsatisfiable { .. }) {
-            return Ok(result);
-        }
-        match k {
-            // TODO: Do const and enum really belong here? Maybe they should always take precedence as they are "literal" constraints?
-            "const" => {
-                let schema = compile_const(v)?;
-                result = result.intersect(schema, &ctx)?
-            }
-            "enum" => {
-                let instances = v
-                    .as_array()
-                    .ok_or_else(|| anyhow!("enum must be an array"))?;
-                let options = instances
-                    .iter()
-                    .map(|instance| compile_const(instance))
-                    .collect::<Result<Vec<_>>>()?;
-                result = result.intersect(Schema::AnyOf { options }, &ctx)?;
-            }
-            "allOf" => {
-                let all_of = v
-                    .as_array()
-                    .ok_or_else(|| anyhow!("allOf must be an array"))?;
-                for value in all_of {
-                    let schema = compile_resource(&ctx, ctx.as_resource_ref(value))?;
-                    result = result.intersect(schema, &ctx)?;
-                }
-            }
-            "anyOf" => {
-                let any_of = v
-                    .as_array()
-                    .ok_or_else(|| anyhow!("anyOf must be an array"))?;
-                let options = any_of
-                    .iter()
-                    .map(|value| compile_resource(&ctx, ctx.as_resource_ref(value)))
-                    .collect::<Result<Vec<_>>>()?;
-                result = result.intersect(Schema::AnyOf { options }, &ctx)?;
-            }
-            "oneOf" => {
-                let one_of = v
-                    .as_array()
-                    .ok_or_else(|| anyhow!("oneOf must be an array"))?;
-                let options = one_of
-                    .iter()
-                    .map(|value| compile_resource(&ctx, ctx.as_resource_ref(value)))
-                    .collect::<Result<Vec<_>>>()?;
-                result = result.intersect(Schema::OneOf { options }, &ctx)?;
-            }
-            "$ref" => {
-                let reference = v
-                    .as_str()
-                    .ok_or_else(|| anyhow!("$ref must be a string, got {}", limited_str(v)))?
-                    .to_string();
-                let uri: String = ctx.normalize_ref(&reference)?;
-                if matches!(result, Schema::Any) {
-                    define_ref(ctx, &uri)?;
-                    result = Schema::Ref { uri };
-                } else {
-                    result = intersect_ref(ctx, &uri, result, false)?;
-                }
-            }
-            _ => {
-                unreachable!("Unimplemented applicator: {}", k);
-            }
-        }
     }
-    Ok(result)
 }
 
 fn define_ref(ctx: &Context, ref_uri: &str) -> Result<()> {
