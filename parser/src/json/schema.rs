@@ -504,16 +504,16 @@ fn compile_contents_inner(ctx: &Context, contents: &Value) -> Result<Schema> {
     let schemadict = schemadict
         .iter()
         .map(|(k, v)| (k.as_str(), v))
-        .collect::<HashMap<_, _>>();
+        .collect::<IndexMap<_, _>>();
 
     compile_contents_map(ctx, schemadict)
 }
 
-fn only_meta_and_annotations(schemadict: &HashMap<&str, &Value>) -> bool {
+fn only_meta_and_annotations(schemadict: &IndexMap<&str, &Value>) -> bool {
     schemadict.keys().all(|k| META_AND_ANNOTATIONS.contains(k))
 }
 
-fn compile_contents_map(ctx: &Context, mut schemadict: HashMap<&str, &Value>) -> Result<Schema> {
+fn compile_contents_map(ctx: &Context, mut schemadict: IndexMap<&str, &Value>) -> Result<Schema> {
     ctx.increment()?;
 
     // We don't need to compile the schema if it's just meta and annotations
@@ -532,124 +532,109 @@ fn compile_contents_map(ctx: &Context, mut schemadict: HashMap<&str, &Value>) ->
         bail!("Unimplemented keys: {:?}", unimplemented_keys);
     }
 
-    if let Some(instance) = schemadict.remove("const") {
-        let const_schema = compile_const(instance)?;
-        let siblings = compile_contents_map(ctx, schemadict)?;
-        return const_schema.intersect(siblings, ctx);
-    }
-
-    if let Some(instances) = schemadict.remove("enum") {
-        let instances = instances
-            .as_array()
-            .ok_or_else(|| anyhow!("enum must be an array"))?;
-        let siblings = compile_contents_map(ctx, schemadict)?;
-        // Short-circuit if schema is already unsatisfiable
-        if matches!(siblings, Schema::Unsatisfiable { .. }) {
-            return Ok(siblings);
-        }
-        let options = instances
-            .into_iter()
-            .map(|instance| compile_const(instance))
-            .map(|res| res.and_then(|schema| schema.intersect(siblings.clone(), ctx)))
-            .collect::<Result<Vec<_>>>()?;
-        return Ok(Schema::AnyOf { options });
-    }
-
-    if let Some(all_of) = schemadict.remove("allOf") {
-        let all_of = all_of
-            .as_array()
-            .ok_or_else(|| anyhow!("allOf must be an array"))?;
-        let siblings = compile_contents_map(ctx, schemadict)?;
-        // Short-circuit if schema is already unsatisfiable
-        if matches!(siblings, Schema::Unsatisfiable { .. }) {
-            return Ok(siblings);
-        }
-        let options = all_of
-            .iter()
-            .map(|value| compile_resource(&ctx, ctx.as_resource_ref(value)))
-            .collect::<Result<Vec<_>>>()?;
-        let merged = intersect(
-            ctx,
-            vec![siblings]
-                .into_iter()
-                .chain(options.into_iter())
-                .collect(),
-        )?;
-        return Ok(merged);
-    }
-
-    if let Some(any_of) = schemadict.remove("anyOf") {
-        let any_of = any_of
-            .as_array()
-            .ok_or_else(|| anyhow!("anyOf must be an array"))?;
-        let siblings = compile_contents_map(ctx, schemadict)?;
-        // Short-circuit if schema is already unsatisfiable
-        if matches!(siblings, Schema::Unsatisfiable { .. }) {
-            return Ok(siblings);
-        }
-        let options = any_of
-            .into_iter()
-            .map(|value| compile_resource(&ctx, ctx.as_resource_ref(value)))
-            .map(|res| res.and_then(|schema| siblings.clone().intersect(schema, ctx)))
-            .collect::<Result<Vec<_>>>()?;
-        return Ok(Schema::AnyOf { options });
-    }
-
-    // TODO: refactor to share code with anyOf
-    if let Some(one_of) = schemadict.remove("oneOf") {
-        let one_of = one_of
-            .as_array()
-            .ok_or_else(|| anyhow!("oneOf must be an array"))?;
-        let siblings = compile_contents_map(ctx, schemadict)?;
-        // Short-circuit if schema is already unsatisfiable
-        if matches!(siblings, Schema::Unsatisfiable { .. }) {
-            return Ok(siblings);
-        }
-        let options = one_of
-            .into_iter()
-            .map(|value| compile_resource(&ctx, ctx.as_resource_ref(value)))
-            .map(|res| res.and_then(|schema| siblings.clone().intersect(schema, ctx)))
-            .collect::<Result<Vec<_>>>()?;
-        return Ok(Schema::OneOf { options }.normalize());
-    }
-
-    if let Some(reference) = schemadict.remove("$ref") {
-        let reference = reference
-            .as_str()
-            .ok_or_else(|| anyhow!("$ref must be a string, got {}", limited_str(&reference)))?
-            .to_string();
-
-        let uri: String = ctx.normalize_ref(&reference)?;
-        let siblings = compile_contents_map(ctx, schemadict)?;
-        if matches!(siblings, Schema::Any) {
-            define_ref(ctx, &uri)?;
-            return Ok(Schema::Ref { uri });
-        } else {
-            return intersect_ref(ctx, &uri, siblings, false);
+    let in_place_applicator_kwds = ["const", "enum", "allOf", "anyOf", "oneOf", "$ref"];
+    let mut siblings = HashMap::default();
+    let mut applicators = IndexMap::new();
+    for (k, v) in schemadict.into_iter() {
+        if in_place_applicator_kwds.contains(&k) {
+            applicators.insert(k, v);
+        } else if !META_AND_ANNOTATIONS.contains(&k) {
+            siblings.insert(k, v);
         }
     }
 
-    let types = match schemadict.remove("type") {
-        Some(Value::String(tp)) => {
-            return compile_type(ctx, &tp, &schemadict);
+    let mut result = if siblings.is_empty() {
+        Schema::Any
+    } else {
+        let types = siblings.remove("type");
+        match types {
+            Some(Value::String(tp)) => compile_type(ctx, &tp, &siblings)?,
+            Some(Value::Array(types)) => {
+                let options = types
+                    .iter()
+                    .map(|type_value| {
+                        type_value
+                            .as_str()
+                            .ok_or_else(|| anyhow!("type must be a string"))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                compile_types(ctx, options, &siblings)?
+            }
+            None => compile_types(ctx, TYPES.to_vec(), &siblings)?,
+            Some(_) => {
+                bail!("type must be a string or array of strings");
+            }
         }
-        Some(Value::Array(types)) => types
-            .iter()
-            .map(|tp| match tp.as_str() {
-                Some(tp) => Ok(tp.to_string()),
-                None => bail!("type must be a string"),
-            })
-            .collect::<Result<Vec<String>>>()?,
-        Some(_) => bail!("type must be a string or array"),
-        None => TYPES.iter().map(|s| s.to_string()).collect(),
     };
 
-    // Shouldn't need siblings here since we've already handled allOf, anyOf, oneOf, and $ref
-    let options = types
-        .iter()
-        .map(|tp| compile_type(ctx, &tp, &schemadict))
-        .collect::<Result<Vec<Schema>>>()?;
-    Ok(Schema::AnyOf { options })
+    for (k, v) in applicators {
+        if matches!(result, Schema::Unsatisfiable { .. }) {
+            return Ok(result);
+        }
+        match k {
+            // TODO: Do const and enum really belong here? Maybe they should always take precedence as they are "literal" constraints?
+            "const" => {
+                let schema = compile_const(v)?;
+                result = result.intersect(schema, &ctx)?
+            }
+            "enum" => {
+                let instances = v
+                    .as_array()
+                    .ok_or_else(|| anyhow!("enum must be an array"))?;
+                let options = instances
+                    .iter()
+                    .map(|instance| compile_const(instance))
+                    .collect::<Result<Vec<_>>>()?;
+                result = result.intersect(Schema::AnyOf { options }, &ctx)?;
+            }
+            "allOf" => {
+                let all_of = v
+                    .as_array()
+                    .ok_or_else(|| anyhow!("allOf must be an array"))?;
+                for value in all_of {
+                    let schema = compile_resource(&ctx, ctx.as_resource_ref(value))?;
+                    result = result.intersect(schema, &ctx)?;
+                }
+            }
+            "anyOf" => {
+                let any_of = v
+                    .as_array()
+                    .ok_or_else(|| anyhow!("anyOf must be an array"))?;
+                let options = any_of
+                    .iter()
+                    .map(|value| compile_resource(&ctx, ctx.as_resource_ref(value)))
+                    .collect::<Result<Vec<_>>>()?;
+                result = result.intersect(Schema::AnyOf { options }, &ctx)?;
+            }
+            "oneOf" => {
+                let one_of = v
+                    .as_array()
+                    .ok_or_else(|| anyhow!("oneOf must be an array"))?;
+                let options = one_of
+                    .iter()
+                    .map(|value| compile_resource(&ctx, ctx.as_resource_ref(value)))
+                    .collect::<Result<Vec<_>>>()?;
+                result = result.intersect(Schema::OneOf { options }, &ctx)?;
+            }
+            "$ref" => {
+                let reference = v
+                    .as_str()
+                    .ok_or_else(|| anyhow!("$ref must be a string, got {}", limited_str(v)))?
+                    .to_string();
+                let uri: String = ctx.normalize_ref(&reference)?;
+                if matches!(result, Schema::Any) {
+                    define_ref(ctx, &uri)?;
+                    result = Schema::Ref { uri };
+                } else {
+                    result = intersect_ref(ctx, &uri, result, false)?;
+                }
+            }
+            _ => {
+                unreachable!("Unimplemented applicator: {}", k);
+            }
+        }
+    }
+    Ok(result)
 }
 
 fn define_ref(ctx: &Context, ref_uri: &str) -> Result<()> {
@@ -732,6 +717,23 @@ fn compile_const(instance: &Value) -> Result<Schema> {
                 required,
             })
         }
+    }
+}
+
+fn compile_types(
+    ctx: &Context,
+    types: Vec<&str>,
+    schema: &HashMap<&str, &Value>,
+) -> Result<Schema> {
+    let mut options = Vec::new();
+    for tp in types {
+        let option = compile_type(ctx, tp, schema)?;
+        options.push(option);
+    }
+    if options.len() == 1 {
+        Ok(options.swap_remove(0))
+    } else {
+        Ok(Schema::AnyOf { options })
     }
 }
 
@@ -1014,29 +1016,6 @@ fn compile_object(
         additional_properties,
         required,
     })
-}
-
-fn intersect(ctx: &Context, schemas: Vec<Schema>) -> Result<Schema> {
-    let (schemas, unsatisfiable) = schemas
-        .into_iter()
-        // "Any" schemas can be ignored
-        .filter(|schema| !matches!(schema, Schema::Any))
-        // Split into unsatisfiable and satisfiable schemas
-        .partition::<Vec<_>, _>(|schema| !matches!(schema, Schema::Unsatisfiable { .. }));
-
-    if let Some(schema) = unsatisfiable.into_iter().next() {
-        return Ok(schema);
-    }
-
-    let mut merged = Schema::Any;
-    for subschema in schemas.into_iter() {
-        merged = merged.intersect(subschema, ctx)?;
-        if matches!(merged, Schema::Unsatisfiable { .. }) {
-            // Early exit if the schema is already unsatisfiable
-            break;
-        }
-    }
-    Ok(merged)
 }
 
 fn opt_max<T: PartialOrd>(a: Option<T>, b: Option<T>) -> Option<T> {
