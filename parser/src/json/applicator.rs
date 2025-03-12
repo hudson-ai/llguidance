@@ -1,3 +1,5 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use super::context::{Context, Draft, PreContext, ResourceRef};
 use super::schema::Schema;
 use super::RetrieveWrapper;
@@ -123,6 +125,10 @@ impl<'ctx> PreSchema<'ctx> {
                 self.inner.assert(assertion);
                 Ok(self)
             }
+            Keyword::SubInstanceApplicator(applicator) => {
+                self.inner.apply_to_subinstance(applicator);
+                Ok(self)
+            }
             Keyword::InPlaceApplicator(applicator) => match applicator {
                 InPlaceApplicator::Ref(uri) => {
                     if self.seen_refs.contains(&uri) {
@@ -174,10 +180,6 @@ impl<'ctx> PreSchema<'ctx> {
                 InPlaceApplicator::Const(v) => todo!(),
                 InPlaceApplicator::Enum(v) => todo!(),
             },
-            Keyword::SubInstanceApplicator(applicator) => {
-                self.inner.apply_to_subinstance(applicator);
-                Ok(self)
-            }
         }
     }
 
@@ -199,7 +201,20 @@ impl<'ctx> PreSchema<'ctx> {
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Schema::OneOf { options: schemas })
             }
-            PreSchemaInner::Simple(schema) => todo!(),
+            PreSchemaInner::Simple(schema) => {
+                // Build a fake URI using the hash of the schema
+                // in order to avoid infinite recursion
+                let mut hash = DefaultHasher::new();
+                schema.hash(&mut hash);
+                let hash = hash.finish();
+                let uri = self.ctx.normalize_ref(&format!("#{}", hash))?;
+                if !self.ctx.been_seen(&uri) {
+                    self.ctx.mark_seen(&uri);
+                    let compiled = schema.compile()?;
+                    self.ctx.insert_ref(&uri, compiled.clone());
+                }
+                Ok(Schema::Ref { uri })
+            }
         }
     }
 }
@@ -213,9 +228,15 @@ enum PreSchemaInner<'a> {
     OneOf(Vec<PreSchema<'a>>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 struct SimpleSchema<'a> {
-    type_: Option<Vec<String>>,
+    null: bool,
+    boolean: bool,
+    number: bool,
+    integer: bool,
+    string: bool,
+    array: bool,
+    object: bool,
     minimum: Option<Number>,
     maximum: Option<Number>,
     exclusive_minimum: Option<Number>,
@@ -229,6 +250,51 @@ struct SimpleSchema<'a> {
     max_items: Option<Number>,
     required: Option<Vec<String>>,
     sub_instance_applicators: Vec<SubInstanceApplicator<'a>>,
+}
+
+impl SimpleSchema<'_> {
+    fn compile(self) -> Result<Schema> {
+        let mut options = Vec::new();
+        if self.null {
+            options.push(Schema::Null);
+        }
+        if self.boolean {
+            // todo -- literal boolean
+            options.push(Schema::Boolean);
+        }
+        if self.number || self.integer {
+            todo!()
+            // options.push(Schema::Number {
+            //     minimum: self.minimum,
+            //     maximum: self.maximum,
+            //     exclusive_minimum: self.exclusive_minimum,
+            //     exclusive_maximum: self.exclusive_maximum,
+            //     multiple_of: self.multiple_of,
+            //     integer: self.integer,
+            // });
+        }
+        if self.string {
+            todo!()
+            // options.push(Schema::String {
+            //     min_length: self.min_length,
+            //     max_length: self.max_length,
+            //     pattern: self.pattern,
+            // });
+        }
+        if self.array {
+            todo!()
+        }
+        if self.object {
+            todo!()
+        }
+        if options.is_empty() {
+            Ok(Schema::false_schema())
+        } else if options.len() == 1 {
+            Ok(options.into_iter().next().unwrap())
+        } else {
+            Ok(Schema::AnyOf { options })
+        }
+    }
 }
 
 impl PreSchemaInner<'_> {
