@@ -1192,52 +1192,34 @@ mod tests {
         let schema = json!({
           "allOf": [
             {
-              "$ref": "#/definitions/word"
+              "$ref": "#/definitions/tree1"
             },
             {
-              "$ref": "#/definitions/x0"
+              "$ref": "#/definitions/tree2"
             },
           ],
           "definitions": {
-            "word": {
+            "tree1": {
               "type": "object",
               "properties": {
-                "a": {
-                  "$ref": "#/definitions/word"
-                },
-                "b": {
-                  "type": "integer",
-                  "exclusiveMinimum": 0
-                }
-              },
-              "required": [
-                "b"
-              ],
-              "additionalProperties": true
-            },
-            "x0": {
-              "additionalProperties": {
-                "allOf": [
-                  {
-                    "$ref": "#/definitions/x1"
-                  },
-                  {
-                    "multipleOf": 2
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/tree1"
                   }
-                ]
-              },
-              "required": [
-                "x0"
-              ]
+                }
+              }
             },
-            "x1": {
-              "additionalProperties": {
-                "$ref": "#/definitions/x0"
-              },
-              "required": [
-                "a",
-                "x1"
-              ]
+            "tree2": {
+              "type": "object",
+              "properties": {
+                "children": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/tree2"
+                  }
+                }
+              }
             },
           }
         });
