@@ -101,7 +101,7 @@ impl<'ctx> PreSchema<'ctx> {
         }
     }
 
-    fn with_resource(mut self, resource: ResourceRef) -> Result<Self> {
+    fn with_resource(mut self, resource: ResourceRef<'ctx>) -> Result<Self> {
         let schema = resource.contents();
         if let Some(b) = schema.as_bool() {
             if !b {
@@ -120,7 +120,7 @@ impl<'ctx> PreSchema<'ctx> {
         Ok(self)
     }
 
-    fn with_keyword(mut self, kwd: Keyword) -> Result<Self> {
+    fn with_keyword(mut self, kwd: Keyword<'ctx>) -> Result<Self> {
         match kwd {
             Keyword::Assertion(assertion) => {
                 self.inner.assert(assertion);
@@ -268,15 +268,14 @@ impl SimpleSchema<'_> {
             options.push(Schema::Boolean);
         }
         if self.types.contains(Types::NUMBER) {
-            todo!()
-            // options.push(Schema::Number {
-            //     minimum: self.minimum,
-            //     maximum: self.maximum,
-            //     exclusive_minimum: self.exclusive_minimum,
-            //     exclusive_maximum: self.exclusive_maximum,
-            //     multiple_of: self.multiple_of,
-            //     integer: !self.types.contains(Types::NON_INTEGER),
-            // });
+            options.push(Schema::Number {
+                minimum: None,           // TODO
+                maximum: None,           // TODO
+                exclusive_minimum: None, // TODO
+                exclusive_maximum: None, // TODO
+                multiple_of: None,       // TODO
+                integer: !self.types.contains(Types::NON_INTEGER),
+            });
         }
         if self.types.contains(Types::STRING) {
             todo!()
@@ -305,7 +304,7 @@ impl SimpleSchema<'_> {
 impl Default for SimpleSchema<'_> {
     fn default() -> Self {
         SimpleSchema {
-            types: Types { bits: Types::ANY },
+            types: Types { bits: Types::ALL },
             minimum: None,
             maximum: None,
             exclusive_minimum: None,
@@ -323,13 +322,13 @@ impl Default for SimpleSchema<'_> {
     }
 }
 
-impl PreSchemaInner<'_> {
+impl<'a> PreSchemaInner<'a> {
     fn assert(&mut self, assertion: Assertion) -> Result<()> {
         match self {
             PreSchemaInner::Any => {
-                let mut concrete = PreSchemaInner::Simple(SimpleSchema::default());
+                let mut concrete = SimpleSchema::default();
                 concrete.assert(assertion)?;
-                *self = concrete;
+                *self = PreSchemaInner::Simple(concrete);
             }
             PreSchemaInner::False => {}
             PreSchemaInner::Simple(schema) => {
@@ -348,8 +347,23 @@ impl PreSchemaInner<'_> {
         };
         Ok(())
     }
-    fn apply_to_subinstance(&mut self, applicator: SubInstanceApplicator) {
-        todo!()
+    fn apply_to_subinstance(&mut self, applicator: SubInstanceApplicator<'a>) {
+        match self {
+            PreSchemaInner::Any => {
+                let mut concrete = SimpleSchema::default();
+                concrete.sub_instance_applicators.push(applicator);
+                *self = PreSchemaInner::Simple(concrete);
+            }
+            PreSchemaInner::False => {}
+            PreSchemaInner::Simple(schema) => {
+                schema.sub_instance_applicators.push(applicator);
+            }
+            PreSchemaInner::AnyOf(schemas) | PreSchemaInner::OneOf(schemas) => {
+                for schema in schemas.iter_mut() {
+                    schema.inner.apply_to_subinstance(applicator.clone());
+                }
+            }
+        };
     }
 }
 
@@ -366,7 +380,7 @@ impl Types {
     const ARRAY: u8 = 0b00100000;
     const OBJECT: u8 = 0b01000000;
     const NUMBER: u8 = Self::INTEGER | Self::NON_INTEGER;
-    const ANY: u8 =
+    const ALL: u8 =
         Self::NULL | Self::BOOLEAN | Self::NUMBER | Self::STRING | Self::ARRAY | Self::OBJECT;
 
     fn contains(&self, flag: u8) -> bool {
@@ -453,7 +467,7 @@ fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec
                     bail!("oneOf must be an array");
                 }
             }
-            "ref" => {
+            "$ref" => {
                 if let Some(v) = v.as_str() {
                     keywords.push(Keyword::InPlaceApplicator(InPlaceApplicator::Ref(
                         ctx.normalize_ref(v)?,
