@@ -723,15 +723,23 @@ mod tests {
     #[test]
     fn test_schema() {
         let schema = json!({
-            "$ref": "#/$defs/tree",
+            "allOf": [{"$ref": "#/$defs/tree1"}, {"$ref": "#/$defs/tree2"}],
             "type": "object",
             "$defs": {
-                "tree": {
-                    "$id": "https://example.com/tree",
-                    "type": ["object"],
+                "tree1": {
+                    "$id": "https://example.com/tree1",
+                    "type": ["object", "null"],
                     "properties": {
-                        "left": { "$ref": "#/$defs/tree" },
-                        "right": { "$ref": "#/$defs/tree" }
+                        "left": { "$ref": "#/$defs/tree1" },
+                        "right": { "$ref": "#/$defs/tree2" }
+                    }
+                },
+                "tree2": {
+                    "$id": "https://example.com/tree2",
+                    "type": ["object", "null"],
+                    "properties": {
+                        "left": { "$ref": "#/$defs/tree2" },
+                        "right": { "$ref": "#/$defs/tree1" }
                     }
                 }
             }
