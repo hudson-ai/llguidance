@@ -2,7 +2,7 @@ use std::any;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::{BitAndAssign, BitOrAssign};
 
-use super::context::{Context, PreContext, ResourceRef};
+use super::context::{Context, Draft, PreContext, ResourceRef};
 use super::formats::lookup_format;
 use super::numeric::Decimal;
 use super::schema::Schema;
@@ -128,7 +128,7 @@ impl<'ctx> PreSchema<'ctx> {
     fn with_keyword(mut self, kwd: Keyword<'ctx>) -> Result<Self> {
         match kwd {
             Keyword::Assertion(assertion) => {
-                self.inner.assert(assertion);
+                self.inner.assert(assertion)?;
                 Ok(self)
             }
             Keyword::SubInstanceApplicator(applicator) => {
@@ -748,8 +748,63 @@ fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec
                     },
                 ));
             }
-            "items" | "prefixItems" | "additionalItems" => {
-                todo!("handle old draft semantics...")
+            "prefixItems" => {
+                if ctx.draft <= Draft::Draft201909
+                    || schema.get("additionalItems").is_some()
+                    || schema.get("items").and_then(|v| v.as_array()).is_some()
+                {
+                    // Note that draft detection falls back to Draft202012 if the draft is unknown, so let's
+                    // relax the draft constraint a bit and assume we're in an old draft if additionalItems
+                    // is present or items is an array. In this case, prefixItems isn't used.
+                    continue;
+                }
+                keywords.push(Keyword::SubInstanceApplicator(
+                    SubInstanceApplicator::PrefixItems(
+                        v.as_array()
+                            .ok_or_else(|| anyhow!("prefixItems must be an array"))?
+                            .iter()
+                            .map(|v| ctx.as_resource_ref(v))
+                            .collect(),
+                    ),
+                ));
+            }
+            "items" => {
+                if ctx.draft <= Draft::Draft201909 || schema.get("additionalItems").is_some() {
+                    // Note that draft detection falls back to Draft202012 if the draft is unknown, so let's
+                    // relax the draft constraint a bit and assume we're in an old draft if additionalItems
+                    // is present. In this case, we let items be an array and treat it as a prefixItems.
+                    if let Some(items) = v.as_array() {
+                        keywords.push(Keyword::SubInstanceApplicator(
+                            SubInstanceApplicator::PrefixItems(
+                                items.iter().map(|v| ctx.as_resource_ref(v)).collect(),
+                            ),
+                        ));
+                        continue;
+                    }
+                }
+                keywords.push(Keyword::SubInstanceApplicator(
+                    SubInstanceApplicator::Items {
+                        applicator: ctx.as_resource_ref(v),
+                        prefix_items: schema
+                            .get("prefixItems")
+                            .and_then(|v| v.as_array())
+                            .map_or(0, |v| v.len()),
+                    },
+                ));
+            }
+            "additionalItems" => {
+                // Note that draft detection falls back to Draft202012 if the draft is unknown, so let's
+                // relax the draft constraint a bit and assume we're in an old draft if additionalItems
+                // is present. In this case, we treat it as items if and only if items is an array (which
+                // we will treat as prefixItems). Otherwise, we ignore additionalItems.
+                if let Some(prefix_items) = schema.get("items").and_then(|v| v.as_array()) {
+                    keywords.push(Keyword::SubInstanceApplicator(
+                        SubInstanceApplicator::Items {
+                            applicator: ctx.as_resource_ref(v),
+                            prefix_items: prefix_items.len(),
+                        },
+                    ));
+                };
             }
             "minItems" => {
                 if let Some(v) = v.as_number() {
