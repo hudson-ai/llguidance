@@ -282,9 +282,9 @@ fn pattern_to_regex(pattern: &str) -> RegexAst {
         result.push_str(".*");
     }
     // without parens, for a|b we would get .*a|b.* which is (.*a)|(b.*)
-    result.push_str("(");
+    result.push('(');
     result.push_str(trimmed);
-    result.push_str(")");
+    result.push(')');
     if !right_anchored {
         result.push_str(".*");
     }
@@ -295,7 +295,7 @@ impl SimpleSchema<'_> {
     fn assert(&mut self, assertion: Assertion) -> Result<()> {
         match assertion {
             Assertion::Types(v) => {
-                self.types &= Types::try_from(v)?;
+                self.types &= v;
                 Ok(())
             }
             Assertion::Minimum(v) => {
@@ -432,7 +432,7 @@ impl SimpleSchema<'_> {
                             let mut promise = SchemaPromise::new();
                             for (excluded, v) in additional_properties.iter() {
                                 if !excluded.contains(k) {
-                                    promise.push_resource(v.clone());
+                                    promise.push_resource(*v);
                                 }
                             }
                             properties.insert(k, promise);
@@ -447,7 +447,7 @@ impl SimpleSchema<'_> {
                 } => {
                     for (k, v) in properties.iter_mut() {
                         if !excluded.contains(k) {
-                            v.push_resource(applicator.clone());
+                            v.push_resource(applicator);
                         }
                     }
                     additional_properties.push((excluded, applicator));
@@ -459,8 +459,8 @@ impl SimpleSchema<'_> {
                         } else {
                             let mut promise = SchemaPromise::new();
                             for (excluded, v) in items.iter() {
-                                if !(&i < excluded) {
-                                    promise.push_resource(v.clone());
+                                if &i >= excluded {
+                                    promise.push_resource(*v);
                                 }
                             }
                             prefix_items.insert(i, promise);
@@ -474,8 +474,8 @@ impl SimpleSchema<'_> {
                     prefix_items: prefix_items_count,
                 } => {
                     for (i, v) in prefix_items.iter_mut() {
-                        if !(*i < prefix_items_count) {
-                            v.push_resource(applicator.clone());
+                        if *i >= prefix_items_count {
+                            v.push_resource(applicator);
                         }
                     }
                     items.push((prefix_items_count, applicator));
@@ -532,7 +532,6 @@ impl SimpleSchema<'_> {
         }
         if self.types.contains(Types::ARRAY) {
             let prefix_items = (0..prefix_items.len())
-                .into_iter()
                 .map(|i| {
                     if let Some(promise) = prefix_items.remove(&i) {
                         promise.compile(ctx)
@@ -669,8 +668,8 @@ impl<'a> SchemaPromise<'a> {
     fn _compile(self, ctx: &Context) -> Result<Schema> {
         self.resources
             .into_iter()
-            .fold(Ok(PreSchema::new(ctx)), |acc, resource| {
-                acc.and_then(|pre_schema| pre_schema.with_resource(resource))
+            .try_fold(PreSchema::new(ctx), |acc, resource| {
+                acc.with_resource(resource)
             })?
             .compile()
     }
