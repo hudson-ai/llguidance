@@ -441,6 +441,7 @@ impl TryFrom<&Value> for Types {
 
 fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec<Keyword<'a>>> {
     let mut keywords = Vec::new();
+    let mut unimplemented = Vec::new();
     for (k, v) in schema.iter() {
         match k.as_str() {
             "type" => {
@@ -605,10 +606,16 @@ fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec
             | "contentMediaType" | "contentEncoding" => {
                 // Ignore these keywords -- they are annotations and metadata
             }
-            _ => todo!(
-                "Check if keyword is recognized using context. Bail if it is, ignore if it's not."
-            ),
+            k => {
+                if ctx.draft.is_known_keyword(k) {
+                    unimplemented.push(k.to_string());
+                }
+                // Otherwise we ignore
+            }
         }
+    }
+    if !unimplemented.is_empty() {
+        bail!("Unimplemented keywords: {:?}", unimplemented);
     }
     Ok(keywords)
 }
