@@ -598,13 +598,13 @@ struct Types {
     bits: u8,
 }
 impl Types {
-    const NULL: u8 = 0b00000001;
-    const BOOLEAN: u8 = 0b00000010;
-    const NON_INTEGER: u8 = 0b00000100;
-    const INTEGER: u8 = 0b00001000;
-    const STRING: u8 = 0b00010000;
-    const ARRAY: u8 = 0b00100000;
-    const OBJECT: u8 = 0b01000000;
+    const NULL: u8 = 1 << 0;
+    const BOOLEAN: u8 = 1 << 1;
+    const NON_INTEGER: u8 = 1 << 2;
+    const INTEGER: u8 = 1 << 3;
+    const STRING: u8 = 1 << 4;
+    const ARRAY: u8 = 1 << 5;
+    const OBJECT: u8 = 1 << 6;
     const NUMBER: u8 = Self::INTEGER | Self::NON_INTEGER;
     const ALL: u8 =
         Self::NULL | Self::BOOLEAN | Self::NUMBER | Self::STRING | Self::ARRAY | Self::OBJECT;
