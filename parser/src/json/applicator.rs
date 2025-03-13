@@ -1,22 +1,23 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::{BitAndAssign, BitOrAssign};
 
-use super::context::{Context, Draft, PreContext, ResourceRef};
+use super::context::{Context, PreContext, ResourceRef};
 use super::schema::Schema;
 use super::RetrieveWrapper;
 use crate::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Result};
+use indexmap::{IndexMap, IndexSet};
 use serde_json::{Map, Number, Value};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 enum Keyword<'a> {
     InPlaceApplicator(InPlaceApplicator<'a>),
     SubInstanceApplicator(SubInstanceApplicator<'a>),
     Assertion(Assertion<'a>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 enum InPlaceApplicator<'a> {
     // In-place
     AllOf(&'a Vec<Value>),
@@ -27,23 +28,23 @@ enum InPlaceApplicator<'a> {
     Enum(&'a Vec<Value>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 enum SubInstanceApplicator<'a> {
     // Object
-    Properties(&'a Map<String, Value>),
+    Properties(IndexMap<&'a String, ResourceRef<'a>>),
     AdditionalProperties {
-        applicator: &'a Value,
-        properties: Option<&'a Map<String, Value>>,
+        applicator: ResourceRef<'a>,
+        properties: HashSet<&'a String>,
     },
     // Array
-    PrefixItems(&'a Vec<Value>),
+    PrefixItems(Vec<ResourceRef<'a>>),
     Items {
-        applicator: &'a Value,
-        prefix_items: Option<&'a Vec<Value>>,
+        applicator: ResourceRef<'a>,
+        prefix_items: usize,
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 enum Assertion<'a> {
     // Core
     Type(&'a Value),
@@ -202,20 +203,7 @@ impl<'ctx> PreSchema<'ctx> {
                     .collect::<Result<Vec<_>>>()?;
                 Ok(Schema::OneOf { options: schemas })
             }
-            PreSchemaInner::Simple(schema) => {
-                // Build a fake URI using the hash of the schema
-                // in order to avoid infinite recursion
-                let mut hash = DefaultHasher::new();
-                schema.hash(&mut hash);
-                let hash = hash.finish();
-                let uri = self.ctx.normalize_ref(&format!("#{}", hash))?;
-                if !self.ctx.been_seen(&uri) {
-                    self.ctx.mark_seen(&uri);
-                    let compiled = schema.compile()?;
-                    self.ctx.insert_ref(&uri, compiled.clone());
-                }
-                Ok(Schema::Ref { uri })
-            }
+            PreSchemaInner::Simple(schema) => schema.compile(self.ctx),
         }
     }
 }
@@ -229,7 +217,7 @@ enum PreSchemaInner<'a> {
     OneOf(Vec<PreSchema<'a>>),
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 struct SimpleSchema<'a> {
     types: Types,
     minimum: Option<Number>,
@@ -258,7 +246,7 @@ impl SimpleSchema<'_> {
         }
     }
 
-    fn compile(self) -> Result<Schema> {
+    fn compile(self, ctx: &Context) -> Result<Schema> {
         let mut options = Vec::new();
         if self.types.contains(Types::NULL) {
             options.push(Schema::Null);
@@ -286,7 +274,61 @@ impl SimpleSchema<'_> {
             // });
         }
         if self.types.contains(Types::OBJECT) {
-            todo!()
+            let mut properties = IndexMap::<&String, SchemaPromise>::new();
+            let mut additional = Vec::<(HashSet<&String>, ResourceRef)>::new();
+            for applicator in self.sub_instance_applicators {
+                match applicator {
+                    SubInstanceApplicator::Properties(properties_to_apply) => {
+                        for (k, v) in properties_to_apply {
+                            let promise = if let Some(promise) = properties.get_mut(k) {
+                                promise
+                            } else {
+                                let mut promise = SchemaPromise::new();
+                                for (excluded, v) in additional.iter() {
+                                    if !excluded.contains(k) {
+                                        promise.push_resource(v.clone());
+                                    }
+                                }
+                                properties.insert(k, promise);
+                                properties.get_mut(k).unwrap()
+                            };
+                            promise.push_resource(v);
+                        }
+                    }
+                    SubInstanceApplicator::AdditionalProperties {
+                        applicator,
+                        properties: excluded,
+                    } => {
+                        for (k, v) in properties.iter_mut() {
+                            if !excluded.contains(k) {
+                                v.push_resource(applicator.clone());
+                            }
+                        }
+                        additional.push((excluded, applicator));
+                    }
+                    _ => todo!(),
+                }
+            }
+            let properties = properties
+                .into_iter()
+                .map(|(k, promise)| {
+                    let schema = promise.compile(ctx)?;
+                    Ok((k.clone(), schema))
+                })
+                .collect::<Result<IndexMap<String, Schema>>>()?;
+
+            let additional_properties = additional
+                .into_iter()
+                .fold(SchemaPromise::new(), |mut acc, (_, applicator)| {
+                    acc.push_resource(applicator);
+                    acc
+                })
+                .compile(ctx)?;
+            options.push(Schema::Object {
+                properties,
+                additional_properties: Some(Box::new(additional_properties)),
+                required: IndexSet::new(), // TODO
+            });
         }
         if self.types.contains(Types::ARRAY) {
             todo!()
@@ -367,7 +409,52 @@ impl<'a> PreSchemaInner<'a> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Debug)]
+struct SchemaPromise<'a> {
+    resources: Vec<ResourceRef<'a>>,
+}
+impl Hash for SchemaPromise<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for resource in self.resources.iter() {
+            resource.contents().hash(state);
+            resource.draft().hash(state);
+        }
+    }
+}
+impl<'a> SchemaPromise<'a> {
+    fn new() -> Self {
+        SchemaPromise {
+            resources: Vec::new(),
+        }
+    }
+    fn push_resource(&mut self, resource: ResourceRef<'a>) {
+        self.resources.push(resource);
+    }
+    fn compile(self, ctx: &Context) -> Result<Schema> {
+        // Build a fake URI using the hash of the schema
+        // in order to avoid infinite recursion
+        let mut hash = DefaultHasher::new();
+        self.hash(&mut hash);
+        let hash = hash.finish();
+        let uri = ctx.normalize_ref(&format!("#{}", hash))?;
+        if !ctx.been_seen(&uri) {
+            ctx.mark_seen(&uri);
+            let compiled = self._compile(ctx)?;
+            ctx.insert_ref(&uri, compiled.clone());
+        }
+        Ok(Schema::Ref { uri })
+    }
+    fn _compile(self, ctx: &Context) -> Result<Schema> {
+        self.resources
+            .into_iter()
+            .fold(Ok(PreSchema::new(ctx)), |acc, resource| {
+                acc.and_then(|pre_schema| pre_schema.with_resource(resource))
+            })?
+            .compile()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Types {
     bits: u8,
 }
@@ -489,8 +576,15 @@ fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec
             }
             "properties" => {
                 if let Some(v) = v.as_object() {
+                    let properties = v
+                        .iter()
+                        .map(|(k, v)| {
+                            let resource = ctx.as_resource_ref(v);
+                            Ok((k, resource))
+                        })
+                        .collect::<Result<IndexMap<&String, ResourceRef>>>()?;
                     keywords.push(Keyword::SubInstanceApplicator(
-                        SubInstanceApplicator::Properties(v),
+                        SubInstanceApplicator::Properties(properties),
                     ));
                 } else {
                     bail!("properties must be an object");
@@ -500,16 +594,17 @@ fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec
                 let properties = schema
                     .get("properties")
                     .map(|v| {
-                        if let Some(v) = v.as_object() {
-                            Ok(v)
-                        } else {
-                            Err(anyhow!("properties must be an object"))
-                        }
+                        v.as_object()
+                            .ok_or_else(|| anyhow!("properties must be an object"))?
+                            .iter()
+                            .map(|(k, _)| Ok(k))
+                            .collect::<Result<HashSet<&String>>>()
                     })
-                    .transpose()?;
+                    .transpose()?
+                    .unwrap_or_default();
                 keywords.push(Keyword::SubInstanceApplicator(
                     SubInstanceApplicator::AdditionalProperties {
-                        applicator: v,
+                        applicator: ctx.as_resource_ref(v),
                         properties,
                     },
                 ));
@@ -618,4 +713,31 @@ fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec
         bail!("Unimplemented keywords: {:?}", unimplemented);
     }
     Ok(keywords)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_schema() {
+        let schema = json!({
+            "$ref": "#/$defs/tree",
+            "type": "object",
+            "$defs": {
+                "tree": {
+                    "$id": "https://example.com/tree",
+                    "type": ["object"],
+                    "properties": {
+                        "left": { "$ref": "#/$defs/tree" },
+                        "right": { "$ref": "#/$defs/tree" }
+                    }
+                }
+            }
+        });
+        let (compiled, defs) = build_schema(schema, None).unwrap();
+        println!("{:?}", compiled);
+        println!("{:?}", defs);
+    }
 }
