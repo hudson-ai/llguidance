@@ -11,6 +11,7 @@ use crate::{HashMap, HashSet};
 use anyhow::{anyhow, bail, Result};
 use derivre::RegexAst;
 use indexmap::{IndexMap, IndexSet};
+use regex_syntax::escape;
 use serde_json::{Map, Value};
 
 #[derive(Clone, Debug)]
@@ -182,8 +183,38 @@ impl<'ctx> PreSchema<'ctx> {
                     );
                     Ok(self)
                 }
-                InPlaceApplicator::Const(v) => todo!(),
-                InPlaceApplicator::Enum(v) => todo!(),
+                InPlaceApplicator::Const(v) => {
+                    match v {
+                        Value::Null => {
+                            self.inner
+                                .assert(Assertion::Types(Types::new(Types::NULL)))?;
+                        }
+                        Value::Bool(b) => todo!("literal boolean"),
+                        Value::Number(n) => {
+                            let n = n
+                                .as_f64()
+                                .ok_or_else(|| anyhow!("error parsing const number"))?;
+                            self.inner
+                                .assert(Assertion::Types(Types::new(Types::NUMBER)))?;
+                            self.inner.assert(Assertion::Minimum(n))?;
+                            self.inner.assert(Assertion::Maximum(n))?;
+                        }
+                        Value::String(s) => {
+                            self.inner
+                                .assert(Assertion::Types(Types::new(Types::STRING)))?;
+                            self.inner
+                                .assert(Assertion::Pattern(format!("^{}$", escape(s.as_str()))))?;
+                        }
+                        Value::Object(o) => {
+                            todo!("const object")
+                        }
+                        Value::Array(a) => {
+                            todo!("const array")
+                        }
+                    }
+                    Ok(self)
+                }
+                InPlaceApplicator::Enum(v) => todo!("enum"),
             },
         }
     }
@@ -607,6 +638,10 @@ impl Types {
     const NUMBER: u8 = Self::INTEGER | Self::NON_INTEGER;
     const ALL: u8 =
         Self::NULL | Self::BOOLEAN | Self::NUMBER | Self::STRING | Self::ARRAY | Self::OBJECT;
+
+    fn new(bits: u8) -> Self {
+        Types { bits }
+    }
 
     fn contains(&self, flag: u8) -> bool {
         self.bits & flag != 0
