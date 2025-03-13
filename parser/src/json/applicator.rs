@@ -1,12 +1,16 @@
+use std::any;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::{BitAndAssign, BitOrAssign};
 
 use super::context::{Context, PreContext, ResourceRef};
+use super::formats::lookup_format;
+use super::numeric::Decimal;
 use super::schema::Schema;
 use super::RetrieveWrapper;
 use crate::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Result};
+use derivre::RegexAst;
 use indexmap::{IndexMap, IndexSet};
 use serde_json::{Map, Number, Value};
 
@@ -14,7 +18,7 @@ use serde_json::{Map, Number, Value};
 enum Keyword<'a> {
     InPlaceApplicator(InPlaceApplicator<'a>),
     SubInstanceApplicator(SubInstanceApplicator<'a>),
-    Assertion(Assertion<'a>),
+    Assertion(Assertion),
 }
 
 #[derive(Clone, Debug)]
@@ -45,25 +49,25 @@ enum SubInstanceApplicator<'a> {
 }
 
 #[derive(Clone, Debug)]
-enum Assertion<'a> {
+enum Assertion {
     // Core
-    Type(&'a Value),
+    Types(Types),
     // Number
-    Minimum(&'a Number),
-    Maximum(&'a Number),
-    ExclusiveMinimum(&'a Number),
-    ExclusiveMaximum(&'a Number),
-    MultipleOf(&'a Number),
+    Minimum(f64),
+    Maximum(f64),
+    ExclusiveMinimum(f64),
+    ExclusiveMaximum(f64),
+    MultipleOf(Decimal),
     // String
-    MinLength(&'a Number),
-    MaxLength(&'a Number),
+    MinLength(u64),
+    MaxLength(u64),
     Pattern(String),
     Format(String),
     // Array
-    MinItems(&'a Number),
-    MaxItems(&'a Number),
+    MinItems(u64),
+    MaxItems(u64),
     // Object
-    Required(&'a Vec<Value>),
+    Required(IndexSet<String>),
 }
 
 pub fn build_schema(
@@ -220,29 +224,166 @@ enum PreSchemaInner<'a> {
 #[derive(Clone, Debug)]
 struct SimpleSchema<'a> {
     types: Types,
-    minimum: Option<Number>,
-    maximum: Option<Number>,
-    exclusive_minimum: Option<Number>,
-    exclusive_maximum: Option<Number>,
-    multiple_of: Option<Number>,
-    min_length: Option<Number>,
-    max_length: Option<Number>,
-    pattern: Option<String>,
-    format: Option<String>,
-    min_items: Option<Number>,
-    max_items: Option<Number>,
-    required: Option<Vec<String>>,
+    // Number
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+    exclusive_minimum: Option<f64>,
+    exclusive_maximum: Option<f64>,
+    multiple_of: Option<Decimal>,
+    // String
+    min_length: u64,
+    max_length: Option<u64>,
+    pattern: Option<RegexAst>,
+    // Array
+    min_items: u64,
+    max_items: Option<u64>,
+    // Object
+    required: IndexSet<String>,
+    // Sub-instance
     sub_instance_applicators: Vec<SubInstanceApplicator<'a>>,
+}
+
+fn pattern_to_regex(pattern: &str) -> RegexAst {
+    let left_anchored = pattern.starts_with('^');
+    let right_anchored = pattern.ends_with('$');
+    let trimmed = pattern.trim_start_matches('^').trim_end_matches('$');
+    let mut result = String::new();
+    if !left_anchored {
+        result.push_str(".*");
+    }
+    // without parens, for a|b we would get .*a|b.* which is (.*a)|(b.*)
+    result.push_str("(");
+    result.push_str(trimmed);
+    result.push_str(")");
+    if !right_anchored {
+        result.push_str(".*");
+    }
+    RegexAst::Regex(result)
 }
 
 impl SimpleSchema<'_> {
     fn assert(&mut self, assertion: Assertion) -> Result<()> {
         match assertion {
-            Assertion::Type(v) => {
+            Assertion::Types(v) => {
                 self.types &= Types::try_from(v)?;
                 Ok(())
             }
-            _ => todo!(),
+            Assertion::Minimum(v) => {
+                match self.minimum {
+                    Some(min) => {
+                        self.minimum = Some(min.max(v));
+                    }
+                    None => {
+                        self.minimum = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::Maximum(v) => {
+                match self.maximum {
+                    Some(max) => {
+                        self.maximum = Some(max.min(v));
+                    }
+                    None => {
+                        self.maximum = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::ExclusiveMinimum(v) => {
+                match self.exclusive_minimum {
+                    Some(min) => {
+                        self.exclusive_minimum = Some(min.max(v));
+                    }
+                    None => {
+                        self.exclusive_minimum = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::ExclusiveMaximum(v) => {
+                match self.exclusive_maximum {
+                    Some(max) => {
+                        self.exclusive_maximum = Some(max.min(v));
+                    }
+                    None => {
+                        self.exclusive_maximum = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::MultipleOf(v) => {
+                match &self.multiple_of {
+                    Some(m) => {
+                        self.multiple_of = Some(m.lcm(&v));
+                    }
+                    None => {
+                        self.multiple_of = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::MinLength(v) => {
+                self.min_length = self.min_length.max(v);
+                Ok(())
+            }
+            Assertion::MaxLength(v) => {
+                match self.max_length {
+                    Some(max) => {
+                        self.max_length = Some(max.min(v));
+                    }
+                    None => {
+                        self.max_length = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::Pattern(v) => {
+                let p2 = pattern_to_regex(&v);
+                match &self.pattern {
+                    Some(p1) => {
+                        self.pattern = Some(RegexAst::And(vec![p1.clone(), p2]));
+                    }
+                    None => {
+                        self.pattern = Some(p2);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::Format(v) => {
+                let fmt = lookup_format(&v).ok_or_else(|| anyhow!("Unknown format: {}", v))?;
+                let p2 = pattern_to_regex(fmt);
+                match &self.pattern {
+                    Some(p1) => {
+                        self.pattern = Some(RegexAst::And(vec![p1.clone(), p2]));
+                    }
+                    None => {
+                        self.pattern = Some(p2);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::MinItems(v) => {
+                self.min_items = self.min_items.max(v);
+                Ok(())
+            }
+            Assertion::MaxItems(v) => {
+                match self.max_items {
+                    Some(max) => {
+                        self.max_items = Some(max.min(v));
+                    }
+                    None => {
+                        self.max_items = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::Required(v) => {
+                for k in v.into_iter() {
+                    self.required.insert(k);
+                }
+                Ok(())
+            }
         }
     }
 
@@ -257,21 +398,20 @@ impl SimpleSchema<'_> {
         }
         if self.types.contains(Types::NUMBER) {
             options.push(Schema::Number {
-                minimum: None,           // TODO
-                maximum: None,           // TODO
-                exclusive_minimum: None, // TODO
-                exclusive_maximum: None, // TODO
-                multiple_of: None,       // TODO
+                minimum: self.minimum,
+                maximum: self.maximum,
+                exclusive_minimum: self.exclusive_minimum,
+                exclusive_maximum: self.exclusive_maximum,
+                multiple_of: self.multiple_of,
                 integer: !self.types.contains(Types::NON_INTEGER),
             });
         }
         if self.types.contains(Types::STRING) {
-            todo!()
-            // options.push(Schema::String {
-            //     min_length: self.min_length,
-            //     max_length: self.max_length,
-            //     pattern: self.pattern,
-            // });
+            options.push(Schema::String {
+                min_length: self.min_length,
+                max_length: self.max_length,
+                regex: self.pattern,
+            });
         }
         if self.types.contains(Types::OBJECT) {
             let mut properties = IndexMap::<&String, SchemaPromise>::new();
@@ -327,11 +467,11 @@ impl SimpleSchema<'_> {
             options.push(Schema::Object {
                 properties,
                 additional_properties: Some(Box::new(additional_properties)),
-                required: IndexSet::new(), // TODO
+                required: self.required,
             });
         }
         if self.types.contains(Types::ARRAY) {
-            todo!()
+            todo!();
         }
         if options.is_empty() {
             Ok(Schema::false_schema())
@@ -352,13 +492,12 @@ impl Default for SimpleSchema<'_> {
             exclusive_minimum: None,
             exclusive_maximum: None,
             multiple_of: None,
-            min_length: None,
+            min_length: 0,
             max_length: None,
             pattern: None,
-            format: None,
-            min_items: None,
+            min_items: 0,
             max_items: None,
-            required: None,
+            required: IndexSet::new(),
             sub_instance_applicators: Vec::new(),
         }
     }
@@ -532,7 +671,7 @@ fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec
     for (k, v) in schema.iter() {
         match k.as_str() {
             "type" => {
-                keywords.push(Keyword::Assertion(Assertion::Type(v)));
+                keywords.push(Keyword::Assertion(Assertion::Types(Types::try_from(v)?)));
             }
             "allOf" => {
                 if let Some(v) = v.as_array() {
@@ -614,28 +753,40 @@ fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec
             }
             "minItems" => {
                 if let Some(v) = v.as_number() {
-                    keywords.push(Keyword::Assertion(Assertion::MinItems(v)));
+                    keywords.push(Keyword::Assertion(Assertion::MinItems(
+                        v.as_u64()
+                            .ok_or_else(|| anyhow!("minItems must be a positive integer"))?,
+                    )));
                 } else {
                     bail!("minItems must be a number");
                 }
             }
             "maxItems" => {
                 if let Some(v) = v.as_number() {
-                    keywords.push(Keyword::Assertion(Assertion::MaxItems(v)));
+                    keywords.push(Keyword::Assertion(Assertion::MaxItems(
+                        v.as_u64()
+                            .ok_or_else(|| anyhow!("maxItems must be a positive integer"))?,
+                    )));
                 } else {
                     bail!("maxItems must be a number");
                 }
             }
             "minLength" => {
                 if let Some(v) = v.as_number() {
-                    keywords.push(Keyword::Assertion(Assertion::MinLength(v)));
+                    keywords.push(Keyword::Assertion(Assertion::MinLength(
+                        v.as_u64()
+                            .ok_or_else(|| anyhow!("minLength must be a positive integer"))?,
+                    )));
                 } else {
                     bail!("minLength must be a number");
                 }
             }
             "maxLength" => {
                 if let Some(v) = v.as_number() {
-                    keywords.push(Keyword::Assertion(Assertion::MaxLength(v)));
+                    keywords.push(Keyword::Assertion(Assertion::MaxLength(
+                        v.as_u64()
+                            .ok_or_else(|| anyhow!("maxLength must be a positive integer"))?,
+                    )));
                 } else {
                     bail!("maxLength must be a number");
                 }
@@ -655,14 +806,14 @@ fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec
                 }
             }
             "minimum" => {
-                if let Some(v) = v.as_number() {
+                if let Some(v) = v.as_number().and_then(|v| v.as_f64()) {
                     keywords.push(Keyword::Assertion(Assertion::Minimum(v)));
                 } else {
                     bail!("minimum must be a number");
                 }
             }
             "maximum" => {
-                if let Some(v) = v.as_number() {
+                if let Some(v) = v.as_number().and_then(|v| v.as_f64()) {
                     keywords.push(Keyword::Assertion(Assertion::Maximum(v)));
                 } else {
                     bail!("maximum must be a number");
@@ -670,28 +821,60 @@ fn get_keywords<'a>(ctx: &Context, schema: &'a Map<String, Value>) -> Result<Vec
             }
             "exclusiveMinimum" => {
                 if let Some(v) = v.as_number() {
-                    keywords.push(Keyword::Assertion(Assertion::ExclusiveMinimum(v)));
+                    keywords.push(Keyword::Assertion(Assertion::ExclusiveMinimum(
+                        v.as_f64()
+                            .ok_or_else(|| anyhow!("exclusiveMinimum must be a number"))?,
+                    )));
+                } else if let Some(b) = v.as_bool() {
+                    // To handle old draft-4 style boolean
+                    if b {
+                        let v = schema.get("minimum").and_then(|v| v.as_f64()).ok_or_else(|| {
+                            anyhow!("If exclusiveMinimum is true, minimum must be specified and a number")
+                        })?;
+                        keywords.push(Keyword::Assertion(Assertion::ExclusiveMinimum(v)));
+                    }
                 } else {
-                    todo!("old draft booleans...")
+                    bail!("exclusiveMinimum must be a number or boolean");
                 }
             }
             "exclusiveMaximum" => {
                 if let Some(v) = v.as_number() {
-                    keywords.push(Keyword::Assertion(Assertion::ExclusiveMaximum(v)));
+                    keywords.push(Keyword::Assertion(Assertion::ExclusiveMaximum(
+                        v.as_f64()
+                            .ok_or_else(|| anyhow!("exclusiveMaximum must be a number"))?,
+                    )));
+                } else if let Some(b) = v.as_bool() {
+                    // To handle old draft-4 style boolean
+                    if b {
+                        let v = schema.get("maximum").and_then(|v| v.as_f64()).ok_or_else(|| {
+                            anyhow!("If exclusiveMaximum is true, maximum must be specified and a number")
+                        })?;
+                        keywords.push(Keyword::Assertion(Assertion::ExclusiveMaximum(v)));
+                    }
                 } else {
-                    todo!("old draft booleans...")
+                    bail!("exclusiveMaximum must be a number or boolean");
                 }
             }
             "multipleOf" => {
-                if let Some(v) = v.as_number() {
-                    keywords.push(Keyword::Assertion(Assertion::MultipleOf(v)));
+                if let Some(v) = v.as_number().and_then(|v| v.as_f64()) {
+                    keywords.push(Keyword::Assertion(Assertion::MultipleOf(
+                        Decimal::try_from(v)?,
+                    )));
                 } else {
                     bail!("multipleOf must be a number");
                 }
             }
             "required" => {
                 if let Some(v) = v.as_array() {
-                    keywords.push(Keyword::Assertion(Assertion::Required(v)));
+                    let mut required = IndexSet::new();
+                    for item in v.iter() {
+                        if let Some(s) = item.as_str() {
+                            required.insert(s.to_string());
+                        } else {
+                            bail!("required must be an array of strings");
+                        }
+                    }
+                    keywords.push(Keyword::Assertion(Assertion::Required(required)));
                 } else {
                     bail!("required must be an array");
                 }
@@ -732,7 +915,8 @@ mod tests {
                     "properties": {
                         "left": { "$ref": "#/$defs/tree1" },
                         "right": { "$ref": "#/$defs/tree2" }
-                    }
+                    },
+                    "required": ["center", "left", "right"]
                 },
                 "tree2": {
                     "$id": "https://example.com/tree2",
@@ -740,7 +924,8 @@ mod tests {
                     "properties": {
                         "left": { "$ref": "#/$defs/tree2" },
                         "right": { "$ref": "#/$defs/tree1" }
-                    }
+                    },
+                    "required": ["left", "right", "under"]
                 }
             }
         });
