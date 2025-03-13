@@ -418,6 +418,71 @@ impl SimpleSchema<'_> {
     }
 
     fn compile(self, ctx: &Context) -> Result<Schema> {
+        let mut properties = IndexMap::<&String, SchemaPromise>::new();
+        let mut additional_properties = Vec::<(HashSet<&String>, ResourceRef)>::new();
+        let mut prefix_items = HashMap::<usize, SchemaPromise>::default();
+        let mut items = Vec::<(usize, ResourceRef)>::new();
+        for applicator in self.sub_instance_applicators {
+            match applicator {
+                SubInstanceApplicator::Properties(properties_to_apply) => {
+                    for (k, v) in properties_to_apply {
+                        let promise = if let Some(promise) = properties.get_mut(k) {
+                            promise
+                        } else {
+                            let mut promise = SchemaPromise::new();
+                            for (excluded, v) in additional_properties.iter() {
+                                if !excluded.contains(k) {
+                                    promise.push_resource(v.clone());
+                                }
+                            }
+                            properties.insert(k, promise);
+                            properties.get_mut(k).unwrap()
+                        };
+                        promise.push_resource(v);
+                    }
+                }
+                SubInstanceApplicator::AdditionalProperties {
+                    applicator,
+                    properties: excluded,
+                } => {
+                    for (k, v) in properties.iter_mut() {
+                        if !excluded.contains(k) {
+                            v.push_resource(applicator.clone());
+                        }
+                    }
+                    additional_properties.push((excluded, applicator));
+                }
+                SubInstanceApplicator::PrefixItems(items_to_apply) => {
+                    for (i, v) in items_to_apply.into_iter().enumerate() {
+                        let promise = if let Some(promise) = prefix_items.get_mut(&i) {
+                            promise
+                        } else {
+                            let mut promise = SchemaPromise::new();
+                            for (excluded, v) in items.iter() {
+                                if !(&i < excluded) {
+                                    promise.push_resource(v.clone());
+                                }
+                            }
+                            prefix_items.insert(i, promise);
+                            prefix_items.get_mut(&i).unwrap()
+                        };
+                        promise.push_resource(v);
+                    }
+                }
+                SubInstanceApplicator::Items {
+                    applicator,
+                    prefix_items: prefix_items_count,
+                } => {
+                    for (i, v) in prefix_items.iter_mut() {
+                        if !(*i < prefix_items_count) {
+                            v.push_resource(applicator.clone());
+                        }
+                    }
+                    items.push((prefix_items_count, applicator));
+                }
+            }
+        }
+
         let mut options = Vec::new();
         if self.types.contains(Types::NULL) {
             options.push(Schema::Null);
@@ -444,41 +509,6 @@ impl SimpleSchema<'_> {
             });
         }
         if self.types.contains(Types::OBJECT) {
-            let mut properties = IndexMap::<&String, SchemaPromise>::new();
-            let mut additional = Vec::<(HashSet<&String>, ResourceRef)>::new();
-            for applicator in self.sub_instance_applicators {
-                match applicator {
-                    SubInstanceApplicator::Properties(properties_to_apply) => {
-                        for (k, v) in properties_to_apply {
-                            let promise = if let Some(promise) = properties.get_mut(k) {
-                                promise
-                            } else {
-                                let mut promise = SchemaPromise::new();
-                                for (excluded, v) in additional.iter() {
-                                    if !excluded.contains(k) {
-                                        promise.push_resource(v.clone());
-                                    }
-                                }
-                                properties.insert(k, promise);
-                                properties.get_mut(k).unwrap()
-                            };
-                            promise.push_resource(v);
-                        }
-                    }
-                    SubInstanceApplicator::AdditionalProperties {
-                        applicator,
-                        properties: excluded,
-                    } => {
-                        for (k, v) in properties.iter_mut() {
-                            if !excluded.contains(k) {
-                                v.push_resource(applicator.clone());
-                            }
-                        }
-                        additional.push((excluded, applicator));
-                    }
-                    _ => todo!(),
-                }
-            }
             let properties = properties
                 .into_iter()
                 .map(|(k, promise)| {
@@ -487,7 +517,7 @@ impl SimpleSchema<'_> {
                 })
                 .collect::<Result<IndexMap<String, Schema>>>()?;
 
-            let additional_properties = additional
+            let additional_properties = additional_properties
                 .into_iter()
                 .fold(SchemaPromise::new(), |mut acc, (_, applicator)| {
                     acc.push_resource(applicator);
@@ -501,7 +531,30 @@ impl SimpleSchema<'_> {
             });
         }
         if self.types.contains(Types::ARRAY) {
-            todo!();
+            let prefix_items = (0..prefix_items.len())
+                .into_iter()
+                .map(|i| {
+                    if let Some(promise) = prefix_items.remove(&i) {
+                        promise.compile(ctx)
+                    } else {
+                        // Is this even possible?
+                        Ok(Schema::Any)
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let items = items
+                .into_iter()
+                .fold(SchemaPromise::new(), |mut acc, (_, applicator)| {
+                    acc.push_resource(applicator);
+                    acc
+                })
+                .compile(ctx)?;
+            options.push(Schema::Array {
+                prefix_items,
+                items: Some(Box::new(items)),
+                min_items: self.min_items,
+                max_items: self.max_items,
+            });
         }
         if options.is_empty() {
             Ok(Schema::false_schema())
