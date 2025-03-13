@@ -1,4 +1,3 @@
-use std::any;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::{BitAndAssign, BitOrAssign};
 
@@ -12,7 +11,7 @@ use crate::{HashMap, HashSet};
 use anyhow::{anyhow, bail, Result};
 use derivre::RegexAst;
 use indexmap::{IndexMap, IndexSet};
-use serde_json::{Map, Number, Value};
+use serde_json::{Map, Value};
 
 #[derive(Clone, Debug)]
 enum Keyword<'a> {
