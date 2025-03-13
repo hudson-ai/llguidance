@@ -1,4 +1,5 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::ops::{BitAndAssign, BitOrAssign};
 
 use super::context::{Context, Draft, PreContext, ResourceRef};
 use super::schema::Schema;
@@ -230,13 +231,7 @@ enum PreSchemaInner<'a> {
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct SimpleSchema<'a> {
-    null: bool,
-    boolean: bool,
-    number: bool,
-    integer: bool,
-    string: bool,
-    array: bool,
-    object: bool,
+    types: Types,
     minimum: Option<Number>,
     maximum: Option<Number>,
     exclusive_minimum: Option<Number>,
@@ -253,16 +248,26 @@ struct SimpleSchema<'a> {
 }
 
 impl SimpleSchema<'_> {
+    fn assert(&mut self, assertion: Assertion) -> Result<()> {
+        match assertion {
+            Assertion::Type(v) => {
+                self.types &= Types::try_from(v)?;
+                Ok(())
+            }
+            _ => todo!(),
+        }
+    }
+
     fn compile(self) -> Result<Schema> {
         let mut options = Vec::new();
-        if self.null {
+        if self.types.contains(Types::NULL) {
             options.push(Schema::Null);
         }
-        if self.boolean {
+        if self.types.contains(Types::BOOLEAN) {
             // todo -- literal boolean
             options.push(Schema::Boolean);
         }
-        if self.number || self.integer {
+        if self.types.contains(Types::NUMBER) {
             todo!()
             // options.push(Schema::Number {
             //     minimum: self.minimum,
@@ -270,10 +275,10 @@ impl SimpleSchema<'_> {
             //     exclusive_minimum: self.exclusive_minimum,
             //     exclusive_maximum: self.exclusive_maximum,
             //     multiple_of: self.multiple_of,
-            //     integer: self.integer,
+            //     integer: !self.types.contains(Types::NON_INTEGER),
             // });
         }
-        if self.string {
+        if self.types.contains(Types::STRING) {
             todo!()
             // options.push(Schema::String {
             //     min_length: self.min_length,
@@ -281,10 +286,10 @@ impl SimpleSchema<'_> {
             //     pattern: self.pattern,
             // });
         }
-        if self.array {
+        if self.types.contains(Types::OBJECT) {
             todo!()
         }
-        if self.object {
+        if self.types.contains(Types::ARRAY) {
             todo!()
         }
         if options.is_empty() {
@@ -297,13 +302,126 @@ impl SimpleSchema<'_> {
     }
 }
 
-impl PreSchemaInner<'_> {
-    fn assert(&mut self, assertion: Assertion) {
-        todo!()
+impl Default for SimpleSchema<'_> {
+    fn default() -> Self {
+        SimpleSchema {
+            types: Types { bits: Types::ANY },
+            minimum: None,
+            maximum: None,
+            exclusive_minimum: None,
+            exclusive_maximum: None,
+            multiple_of: None,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+            format: None,
+            min_items: None,
+            max_items: None,
+            required: None,
+            sub_instance_applicators: Vec::new(),
+        }
     }
+}
 
+impl PreSchemaInner<'_> {
+    fn assert(&mut self, assertion: Assertion) -> Result<()> {
+        match self {
+            PreSchemaInner::Any => {
+                let mut concrete = PreSchemaInner::Simple(SimpleSchema::default());
+                concrete.assert(assertion)?;
+                *self = concrete;
+            }
+            PreSchemaInner::False => {}
+            PreSchemaInner::Simple(schema) => {
+                schema.assert(assertion)?;
+            }
+            PreSchemaInner::AnyOf(schemas) => {
+                for schema in schemas.iter_mut() {
+                    schema.inner.assert(assertion.clone())?;
+                }
+            }
+            PreSchemaInner::OneOf(schemas) => {
+                for schema in schemas.iter_mut() {
+                    schema.inner.assert(assertion.clone())?;
+                }
+            }
+        };
+        Ok(())
+    }
     fn apply_to_subinstance(&mut self, applicator: SubInstanceApplicator) {
         todo!()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct Types {
+    bits: u8,
+}
+impl Types {
+    const NULL: u8 = 0b00000001;
+    const BOOLEAN: u8 = 0b00000010;
+    const NON_INTEGER: u8 = 0b00000100;
+    const INTEGER: u8 = 0b00001000;
+    const STRING: u8 = 0b00010000;
+    const ARRAY: u8 = 0b00100000;
+    const OBJECT: u8 = 0b01000000;
+    const NUMBER: u8 = Self::INTEGER | Self::NON_INTEGER;
+    const ANY: u8 =
+        Self::NULL | Self::BOOLEAN | Self::NUMBER | Self::STRING | Self::ARRAY | Self::OBJECT;
+
+    fn contains(&self, flag: u8) -> bool {
+        self.bits & flag != 0
+    }
+}
+
+impl BitAndAssign for Types {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.bits &= rhs.bits;
+    }
+}
+
+impl BitOrAssign for Types {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.bits |= rhs.bits;
+    }
+}
+
+impl TryFrom<&str> for Types {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        let bits = match value {
+            "null" => Types::NULL,
+            "boolean" => Types::BOOLEAN,
+            "integer" => Types::INTEGER,
+            "string" => Types::STRING,
+            "array" => Types::ARRAY,
+            "object" => Types::OBJECT,
+            "number" => Types::NUMBER,
+            _ => bail!("unknown type: {}", value),
+        };
+        Ok(Types { bits })
+    }
+}
+
+impl TryFrom<&Value> for Types {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &Value) -> Result<Self> {
+        if let Some(s) = value.as_str() {
+            Types::try_from(s)
+        } else if let Some(v) = value.as_array() {
+            let mut types = Types { bits: 0 };
+            for t in v.iter() {
+                let s = t
+                    .as_str()
+                    .ok_or_else(|| anyhow!("type array must be array of strings"))?;
+                types |= Types::try_from(s)?;
+            }
+            Ok(types)
+        } else {
+            bail!("type must be a string or array of strings")
+        }
     }
 }
 
