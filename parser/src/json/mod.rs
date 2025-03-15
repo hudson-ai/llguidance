@@ -2,6 +2,7 @@ mod applicator;
 pub mod compiler;
 mod formats;
 mod numeric;
+mod pre_schema;
 mod schema;
 mod shared_context;
 
