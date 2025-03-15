@@ -57,14 +57,13 @@ impl SimpleParcooked {
                 for (k, v) in properties {
                     if let Some(schema) = self.properties.get_mut(&k) {
                         schema.intersect(v)
-                    }
-                    if let Some(mut schema) = self.pending_properties.remove(&k) {
+                    } else if let Some(mut schema) = self.pending_properties.remove(&k) {
                         schema.intersect(v);
                         self.properties.insert(k, schema);
                     } else {
                         let mut schema = self.additional_properties.clone();
                         schema.intersect(v);
-                        self.pending_properties.insert(k, v);
+                        self.pending_properties.insert(k, schema);
                     }
                 }
             }
