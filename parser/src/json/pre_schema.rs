@@ -1,26 +1,38 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
-use std::ops::{BitAndAssign, BitOrAssign};
-
 use super::context::{Context, Draft, PreContext, ResourceRef};
-use super::formats::lookup_format;
 use super::numeric::Decimal;
-use super::schema::Schema;
 use super::RetrieveWrapper;
-use crate::json::schema;
 use crate::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Result};
-use derivre::RegexAst;
 use indexmap::{IndexMap, IndexSet};
-use regex_syntax::escape;
 use serde_json::{Map, Value};
 
 #[derive(Clone, Debug)]
-enum PreSchema {
+enum Schema<S: SchemaObject> {
     True,
     False,
-    Kwds(Vec<Keyword>),
+    Object(S),
 }
+
+trait SchemaObject {}
+
+#[derive(Clone, Debug)]
+struct RawSchema {
+    kwds: Vec<Keyword>,
+}
+impl SchemaObject for RawSchema {}
+
+#[derive(Clone, Debug)]
+struct ParcookedSchema {
+    // This instance
+    assertions: Vec<Assertion>,
+    // Sub instances
+    properties: IndexMap<String, Schema<RawSchema>>,
+    additional_properties: Schema<RawSchema>,
+    prefix_items: Vec<Schema<RawSchema>>,
+    items: Option<Schema<RawSchema>>,
+}
+impl SchemaObject for ParcookedSchema {}
 
 #[derive(Clone, Debug)]
 enum Keyword {
@@ -31,9 +43,9 @@ enum Keyword {
 
 #[derive(Clone, Debug)]
 enum InPlaceApplicator {
-    AllOf(Vec<PreSchema>),
-    AnyOf(Vec<PreSchema>),
-    OneOf(Vec<PreSchema>),
+    AllOf(Vec<Schema<RawSchema>>),
+    AnyOf(Vec<Schema<RawSchema>>),
+    OneOf(Vec<Schema<RawSchema>>),
     Const(Value),
     Ref(String),
 }
@@ -41,15 +53,15 @@ enum InPlaceApplicator {
 #[derive(Clone, Debug)]
 enum SubInstanceApplicator {
     // Object
-    Properties(IndexMap<String, PreSchema>),
+    Properties(IndexMap<String, Schema<RawSchema>>),
     AdditionalProperties {
-        applicator: PreSchema,
+        applicator: Schema<RawSchema>,
         properties: HashSet<String>,
     },
     // Array
-    PrefixItems(Vec<PreSchema>),
+    PrefixItems(Vec<Schema<RawSchema>>),
     Items {
-        applicator: PreSchema,
+        applicator: Schema<RawSchema>,
         prefix_items: usize,
     },
 }
@@ -81,30 +93,16 @@ struct Types {
     // todo
 }
 
-trait SchemaBuilderState {}
-
-struct Initial {
+struct SchemaBuilder {
+    definitions: HashMap<String, Schema<RawSchema>>,
     seen: HashSet<String>,
 }
-impl SchemaBuilderState for Initial {}
 
-struct Crawled {
-    root: PreSchema,
-}
-impl SchemaBuilderState for Crawled {}
-
-struct SchemaBuilder<S: SchemaBuilderState> {
-    definitions: HashMap<String, PreSchema>,
-    extra: S,
-}
-
-impl SchemaBuilder<Initial> {
+impl SchemaBuilder {
     fn new() -> Self {
         Self {
             definitions: HashMap::default(),
-            extra: Initial {
-                seen: HashSet::default(),
-            },
+            seen: HashSet::default(),
         }
     }
 
@@ -112,29 +110,28 @@ impl SchemaBuilder<Initial> {
         mut self,
         schema: Value,
         retriever: Option<RetrieveWrapper>,
-    ) -> Result<SchemaBuilder<Crawled>> {
+    ) -> Result<(Schema<RawSchema>, HashMap<String, Schema<RawSchema>>)> {
         let pre_ctx = PreContext::new(schema, retriever)?;
         let ctx = Context::new(&pre_ctx)?;
 
         let root_resource = ctx.lookup_resource(&pre_ctx.base_uri)?;
         let psk = self.visit(&ctx, root_resource)?;
-        Ok(SchemaBuilder {
-            definitions: self.definitions,
-            extra: Crawled { root: psk },
-        })
+        Ok((psk, self.definitions))
     }
 
-    fn visit(&mut self, ctx: &Context, resource: ResourceRef) -> Result<PreSchema> {
+    fn visit(&mut self, ctx: &Context, resource: ResourceRef) -> Result<Schema<RawSchema>> {
         let ctx = ctx.in_subresource(resource)?;
         let schema = resource.contents();
         if let Some(b) = schema.as_bool() {
-            let psk = if b { PreSchema::True } else { PreSchema::False };
+            let psk = if b { Schema::True } else { Schema::False };
             return Ok(psk);
         }
         let schema = schema
             .as_object()
             .ok_or_else(|| anyhow!("schema must be an object or boolean"))?;
-        let psk = PreSchema::Kwds(self.keywords(&ctx, schema)?);
+        let psk = Schema::Object(RawSchema {
+            kwds: self.keywords(&ctx, schema)?,
+        });
         Ok(psk)
     }
 
@@ -191,8 +188,8 @@ impl SchemaBuilder<Initial> {
                 "$ref" => {
                     if let Some(v) = v.as_str() {
                         let uri = ctx.normalize_ref(v)?;
-                        if !self.extra.seen.contains(&uri) {
-                            self.extra.seen.insert(uri.clone());
+                        if !self.seen.contains(&uri) {
+                            self.seen.insert(uri.clone());
                             let resource = ctx.lookup_resource(&uri);
                             let psk = self.visit(ctx, resource?)?;
                             self.definitions.insert(uri.clone(), psk);
@@ -214,7 +211,7 @@ impl SchemaBuilder<Initial> {
                             .cloned()
                             .map(InPlaceApplicator::Const)
                             .map(Keyword::InPlaceApplicator)
-                            .map(|kwd| PreSchema::Kwds(vec![kwd]))
+                            .map(|kwd| Schema::Object(RawSchema { kwds: vec![kwd] }))
                             .collect::<Vec<_>>();
                         keywords.push(Keyword::InPlaceApplicator(InPlaceApplicator::AnyOf(
                             options,
@@ -232,7 +229,7 @@ impl SchemaBuilder<Initial> {
                                 let psk = self.visit(ctx, resource)?;
                                 Ok((k.clone(), psk))
                             })
-                            .collect::<Result<IndexMap<String, PreSchema>>>()?;
+                            .collect::<Result<IndexMap<String, Schema<RawSchema>>>>()?;
                         keywords.push(Keyword::SubInstanceApplicator(
                             SubInstanceApplicator::Properties(properties),
                         ));
