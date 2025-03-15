@@ -8,31 +8,192 @@ use indexmap::{IndexMap, IndexSet};
 use serde_json::{Map, Value};
 
 #[derive(Clone, Debug)]
-enum Schema<S: SchemaObject> {
+enum RawSchema {
     True,
     False,
-    Object(S),
+    Kwds(Vec<Keyword>),
 }
 
-trait SchemaObject {}
-
 #[derive(Clone, Debug)]
-struct RawSchema {
-    kwds: Vec<Keyword>,
+enum ParcookedSchema {
+    Any,
+    Unsatisfiable(String),
+    Simple(Box<SimpleParcooked>),
+    AnyOf(Vec<ParcookedSchema>),
+    OneOf(Vec<ParcookedSchema>),
 }
-impl SchemaObject for RawSchema {}
 
 #[derive(Clone, Debug)]
-struct ParcookedSchema {
+struct SimpleParcooked {
     // This instance
     assertions: Vec<Assertion>,
     // Sub instances
-    properties: IndexMap<String, Schema<RawSchema>>,
-    additional_properties: Schema<RawSchema>,
-    prefix_items: Vec<Schema<RawSchema>>,
-    items: Option<Schema<RawSchema>>,
+    properties: IndexMap<String, RawSchema>,
+    pending_properties: HashMap<String, RawSchema>,
+    additional_properties: RawSchema,
+    prefix_items: HashMap<usize, RawSchema>,
+    pending_prefix_items: HashMap<usize, RawSchema>,
+    items: RawSchema,
 }
-impl SchemaObject for ParcookedSchema {}
+
+impl SimpleParcooked {
+    fn new() -> Self {
+        Self {
+            assertions: Vec::new(),
+            properties: IndexMap::new(),
+            pending_properties: HashMap::default(),
+            additional_properties: RawSchema::True,
+            prefix_items: HashMap::default(),
+            pending_prefix_items: HashMap::default(),
+            items: RawSchema::True,
+        }
+    }
+    fn assert(&mut self, assertion: Assertion) {
+        self.assertions.push(assertion);
+    }
+    fn apply_to_subinstance(&mut self, applicator: SubInstanceApplicator) {
+        match applicator {
+            SubInstanceApplicator::Properties(properties) => {
+                for (k, v) in properties {
+                    if let Some(schema) = self.properties.get_mut(&k) {
+                        schema.intersect(v)
+                    }
+                    if let Some(mut schema) = self.pending_properties.remove(&k) {
+                        schema.intersect(v);
+                        self.properties.insert(k, schema);
+                    } else {
+                        let mut schema = self.additional_properties.clone();
+                        schema.intersect(v);
+                        self.pending_properties.insert(k, v);
+                    }
+                }
+            }
+            SubInstanceApplicator::AdditionalProperties {
+                applicator,
+                properties,
+            } => {
+                for (k, v) in self.properties.iter_mut() {
+                    if !properties.contains(k) {
+                        v.intersect(applicator.clone());
+                    }
+                }
+                for (k, v) in self.pending_properties.iter_mut() {
+                    if !properties.contains(k) {
+                        v.intersect(applicator.clone());
+                    }
+                }
+                for k in properties {
+                    if !self.properties.contains_key(&k) {
+                        self.pending_properties.insert(k, applicator.clone());
+                    }
+                }
+                self.additional_properties.intersect(applicator);
+            }
+            _ => todo!(),
+        }
+    }
+}
+
+impl RawSchema {
+    fn parcook(self, definitions: &HashMap<String, RawSchema>) -> ParcookedSchema {
+        ParcookedSchema::Any.intersect(self, definitions)
+    }
+    fn intersect(&mut self, other: RawSchema) {
+        // missed optimization opportunity since we're accumulating all keywords and not
+        // sharing work for common prefixes
+        todo!()
+    }
+}
+
+impl ParcookedSchema {
+    fn intersect(mut self, other: RawSchema, definitions: &HashMap<String, RawSchema>) -> Self {
+        let kwds = match other {
+            RawSchema::True => return self,
+            RawSchema::False => return ParcookedSchema::Unsatisfiable("false schema".to_string()),
+            RawSchema::Kwds(kwds) => kwds,
+        };
+        for kwd in kwds {
+            match kwd {
+                Keyword::Assertion(assertion) => {
+                    self.assert(assertion);
+                }
+                Keyword::InPlaceApplicator(applicator) => match applicator {
+                    InPlaceApplicator::AllOf(subschemas) => {
+                        for schema in subschemas {
+                            self = self.intersect(schema, definitions);
+                        }
+                    }
+                    InPlaceApplicator::AnyOf(subschemas) => {
+                        let options = subschemas
+                            .into_iter()
+                            .map(|schema| self.clone().intersect(schema, definitions))
+                            .collect::<Vec<_>>();
+                        self = ParcookedSchema::AnyOf(options);
+                    }
+                    InPlaceApplicator::OneOf(subschemas) => {
+                        let options = subschemas
+                            .into_iter()
+                            .map(|schema| self.clone().intersect(schema, definitions))
+                            .collect::<Vec<_>>();
+                        self = ParcookedSchema::OneOf(options);
+                    }
+                    InPlaceApplicator::Const(value) => {
+                        todo!()
+                    }
+                    InPlaceApplicator::Ref(uri) => {
+                        if let Some(schema) = definitions.get(&uri) {
+                            self = self.intersect(schema.clone(), definitions);
+                        } else {
+                            // TODO: Results
+                            panic!("We should have already crawled this schema...");
+                        }
+                    }
+                },
+                Keyword::SubInstanceApplicator(applicator) => self.apply_to_subinstance(applicator),
+            }
+        }
+        self
+    }
+
+    fn assert(&mut self, assertion: Assertion) {
+        match self {
+            ParcookedSchema::Any => {
+                *self = ParcookedSchema::Simple(Box::new(SimpleParcooked::new()));
+                self.assert(assertion);
+            }
+            ParcookedSchema::Unsatisfiable(_) => {
+                // No-op
+            }
+            ParcookedSchema::AnyOf(subschemas) | ParcookedSchema::OneOf(subschemas) => {
+                for schema in subschemas {
+                    schema.assert(assertion.clone());
+                }
+            }
+            ParcookedSchema::Simple(simple) => {
+                // Base case
+                simple.assert(assertion);
+            }
+        }
+    }
+
+    fn apply_to_subinstance(&mut self, applicator: SubInstanceApplicator) {
+        match self {
+            ParcookedSchema::Any => {
+                *self = ParcookedSchema::Simple(Box::new(SimpleParcooked::new()));
+                self.apply_to_subinstance(applicator);
+            }
+            ParcookedSchema::Unsatisfiable(_) => {
+                // No-op
+            }
+            ParcookedSchema::AnyOf(subschemas) | ParcookedSchema::OneOf(subschemas) => {
+                for schema in subschemas {
+                    schema.apply_to_subinstance(applicator.clone());
+                }
+            }
+            ParcookedSchema::Simple(simple) => simple.apply_to_subinstance(applicator),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 enum Keyword {
@@ -43,9 +204,9 @@ enum Keyword {
 
 #[derive(Clone, Debug)]
 enum InPlaceApplicator {
-    AllOf(Vec<Schema<RawSchema>>),
-    AnyOf(Vec<Schema<RawSchema>>),
-    OneOf(Vec<Schema<RawSchema>>),
+    AllOf(Vec<RawSchema>),
+    AnyOf(Vec<RawSchema>),
+    OneOf(Vec<RawSchema>),
     Const(Value),
     Ref(String),
 }
@@ -53,15 +214,15 @@ enum InPlaceApplicator {
 #[derive(Clone, Debug)]
 enum SubInstanceApplicator {
     // Object
-    Properties(IndexMap<String, Schema<RawSchema>>),
+    Properties(IndexMap<String, RawSchema>),
     AdditionalProperties {
-        applicator: Schema<RawSchema>,
+        applicator: RawSchema,
         properties: HashSet<String>,
     },
     // Array
-    PrefixItems(Vec<Schema<RawSchema>>),
+    PrefixItems(Vec<RawSchema>),
     Items {
-        applicator: Schema<RawSchema>,
+        applicator: RawSchema,
         prefix_items: usize,
     },
 }
@@ -94,7 +255,7 @@ struct Types {
 }
 
 struct SchemaBuilder {
-    definitions: HashMap<String, Schema<RawSchema>>,
+    definitions: HashMap<String, RawSchema>,
     seen: HashSet<String>,
 }
 
@@ -110,7 +271,7 @@ impl SchemaBuilder {
         mut self,
         schema: Value,
         retriever: Option<RetrieveWrapper>,
-    ) -> Result<(Schema<RawSchema>, HashMap<String, Schema<RawSchema>>)> {
+    ) -> Result<(RawSchema, HashMap<String, RawSchema>)> {
         let pre_ctx = PreContext::new(schema, retriever)?;
         let ctx = Context::new(&pre_ctx)?;
 
@@ -119,19 +280,17 @@ impl SchemaBuilder {
         Ok((psk, self.definitions))
     }
 
-    fn visit(&mut self, ctx: &Context, resource: ResourceRef) -> Result<Schema<RawSchema>> {
+    fn visit(&mut self, ctx: &Context, resource: ResourceRef) -> Result<RawSchema> {
         let ctx = ctx.in_subresource(resource)?;
         let schema = resource.contents();
         if let Some(b) = schema.as_bool() {
-            let psk = if b { Schema::True } else { Schema::False };
+            let psk = if b { RawSchema::True } else { RawSchema::False };
             return Ok(psk);
         }
         let schema = schema
             .as_object()
             .ok_or_else(|| anyhow!("schema must be an object or boolean"))?;
-        let psk = Schema::Object(RawSchema {
-            kwds: self.keywords(&ctx, schema)?,
-        });
+        let psk = RawSchema::Kwds(self.keywords(&ctx, schema)?);
         Ok(psk)
     }
 
@@ -211,7 +370,7 @@ impl SchemaBuilder {
                             .cloned()
                             .map(InPlaceApplicator::Const)
                             .map(Keyword::InPlaceApplicator)
-                            .map(|kwd| Schema::Object(RawSchema { kwds: vec![kwd] }))
+                            .map(|kwd| RawSchema::Kwds(vec![kwd]))
                             .collect::<Vec<_>>();
                         keywords.push(Keyword::InPlaceApplicator(InPlaceApplicator::AnyOf(
                             options,
@@ -229,7 +388,7 @@ impl SchemaBuilder {
                                 let psk = self.visit(ctx, resource)?;
                                 Ok((k.clone(), psk))
                             })
-                            .collect::<Result<IndexMap<String, Schema<RawSchema>>>>()?;
+                            .collect::<Result<IndexMap<String, RawSchema>>>()?;
                         keywords.push(Keyword::SubInstanceApplicator(
                             SubInstanceApplicator::Properties(properties),
                         ));
