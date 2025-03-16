@@ -263,7 +263,41 @@ impl SimpleParcooked {
                 }
                 self.additional_properties.intersect(applicator);
             }
-            _ => todo!(),
+            SubInstanceApplicator::PrefixItems(items) => {
+                for (i, v) in items.into_iter().enumerate() {
+                    if let Some(schema) = self.prefix_items.get_mut(&i) {
+                        schema.intersect(v);
+                    } else if let Some(mut schema) = self.pending_prefix_items.remove(&i) {
+                        schema.intersect(v);
+                        self.prefix_items.insert(i, schema);
+                    } else {
+                        let mut schema = self.items.clone();
+                        schema.intersect(v);
+                        self.prefix_items.insert(i, schema);
+                    }
+                }
+            }
+            SubInstanceApplicator::Items {
+                applicator,
+                n_prefix_items,
+            } => {
+                for (i, v) in self.prefix_items.iter_mut() {
+                    if *i >= n_prefix_items {
+                        v.intersect(applicator.clone());
+                    }
+                }
+                for (i, v) in self.pending_prefix_items.iter_mut() {
+                    if *i >= n_prefix_items {
+                        v.intersect(applicator.clone());
+                    }
+                }
+                for i in 0..n_prefix_items {
+                    if !self.prefix_items.contains_key(&i) {
+                        self.pending_prefix_items.insert(i, self.items.clone());
+                    }
+                }
+                self.items.intersect(applicator);
+            }
         }
     }
 }
@@ -347,7 +381,7 @@ impl ParcookedSchema {
                             self.assert(Assertion::MaxItems(1))?;
                             self.apply_to_subinstance(SubInstanceApplicator::Items {
                                 applicator: RawSchema::False,
-                                prefix_items: a.len(),
+                                n_prefix_items: a.len(),
                             });
                             self.apply_to_subinstance(SubInstanceApplicator::PrefixItems(
                                 a.into_iter()
@@ -468,7 +502,7 @@ enum SubInstanceApplicator {
     PrefixItems(Vec<RawSchema>),
     Items {
         applicator: RawSchema,
-        prefix_items: usize,
+        n_prefix_items: usize,
     },
 }
 
@@ -713,7 +747,7 @@ impl SchemaBuilder {
                     keywords.push(Keyword::SubInstanceApplicator(
                         SubInstanceApplicator::Items {
                             applicator: self.visit(ctx, ctx.as_resource_ref(v))?,
-                            prefix_items: schema
+                            n_prefix_items: schema
                                 .get("prefixItems")
                                 .and_then(|v| v.as_array())
                                 .map_or(0, |v| v.len()),
@@ -729,7 +763,7 @@ impl SchemaBuilder {
                         keywords.push(Keyword::SubInstanceApplicator(
                             SubInstanceApplicator::Items {
                                 applicator: self.visit(ctx, ctx.as_resource_ref(v))?,
-                                prefix_items: prefix_items.len(),
+                                n_prefix_items: prefix_items.len(),
                             },
                         ));
                     };
