@@ -272,8 +272,13 @@ impl RawSchema {
     }
     fn intersect(&mut self, other: RawSchema) {
         // missed optimization opportunity since we're accumulating all keywords and not
-        // sharing work for common prefixes
-        todo!()
+        // sharing work for common prefixes?
+        if matches!(self, RawSchema::True) | matches!(other, RawSchema::False) {
+            *self = other;
+        } else if let (RawSchema::Kwds(kwds), RawSchema::Kwds(other_kwds)) = (self, other) {
+            kwds.extend(other_kwds);
+        }
+        // Other case are no-ops
     }
 }
 
