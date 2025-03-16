@@ -1,11 +1,16 @@
+#![allow(dead_code)] // Just for development
+
 use super::context::{Context, Draft, PreContext, ResourceRef};
+use super::formats::lookup_format;
 use super::numeric::Decimal;
 use super::RetrieveWrapper;
 use crate::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Result};
+use derivre::RegexAst;
 use indexmap::{IndexMap, IndexSet};
 use serde_json::{Map, Value};
+use std::ops::{BitAndAssign, BitOrAssign};
 
 #[derive(Clone, Debug)]
 enum RawSchema {
@@ -26,7 +31,7 @@ enum ParcookedSchema {
 #[derive(Clone, Debug)]
 struct SimpleParcooked {
     // This instance
-    assertions: Vec<Assertion>,
+    assertions: Assertions,
     // Sub instances
     properties: IndexMap<String, RawSchema>,
     pending_properties: HashMap<String, RawSchema>,
@@ -36,10 +41,157 @@ struct SimpleParcooked {
     items: RawSchema,
 }
 
-impl SimpleParcooked {
-    fn new() -> Self {
+#[derive(Clone, Debug)]
+struct Assertions {
+    types: Types,
+    // Number
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+    exclusive_minimum: Option<f64>,
+    exclusive_maximum: Option<f64>,
+    multiple_of: Option<Decimal>,
+    // String
+    min_length: u64,
+    max_length: Option<u64>,
+    pattern: Option<RegexAst>,
+    // Array
+    min_items: u64,
+    max_items: Option<u64>,
+    // Object
+    required: IndexSet<String>,
+}
+
+impl Assertions {
+    fn assert(&mut self, assertion: Assertion) -> Result<()> {
+        match assertion {
+            Assertion::Types(v) => {
+                self.types &= v;
+                Ok(())
+            }
+            Assertion::Minimum(v) => {
+                match self.minimum {
+                    Some(min) => {
+                        self.minimum = Some(min.max(v));
+                    }
+                    None => {
+                        self.minimum = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::Maximum(v) => {
+                match self.maximum {
+                    Some(max) => {
+                        self.maximum = Some(max.min(v));
+                    }
+                    None => {
+                        self.maximum = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::ExclusiveMinimum(v) => {
+                match self.exclusive_minimum {
+                    Some(min) => {
+                        self.exclusive_minimum = Some(min.max(v));
+                    }
+                    None => {
+                        self.exclusive_minimum = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::ExclusiveMaximum(v) => {
+                match self.exclusive_maximum {
+                    Some(max) => {
+                        self.exclusive_maximum = Some(max.min(v));
+                    }
+                    None => {
+                        self.exclusive_maximum = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::MultipleOf(v) => {
+                match &self.multiple_of {
+                    Some(m) => {
+                        self.multiple_of = Some(m.lcm(&v));
+                    }
+                    None => {
+                        self.multiple_of = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::MinLength(v) => {
+                self.min_length = self.min_length.max(v);
+                Ok(())
+            }
+            Assertion::MaxLength(v) => {
+                match self.max_length {
+                    Some(max) => {
+                        self.max_length = Some(max.min(v));
+                    }
+                    None => {
+                        self.max_length = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::Pattern(v) => {
+                let p2 = pattern_to_regex(&v);
+                match &self.pattern {
+                    Some(p1) => {
+                        self.pattern = Some(RegexAst::And(vec![p1.clone(), p2]));
+                    }
+                    None => {
+                        self.pattern = Some(p2);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::Format(v) => {
+                let fmt = lookup_format(&v).ok_or_else(|| anyhow!("Unknown format: {}", v))?;
+                let p2 = pattern_to_regex(fmt);
+                match &self.pattern {
+                    Some(p1) => {
+                        self.pattern = Some(RegexAst::And(vec![p1.clone(), p2]));
+                    }
+                    None => {
+                        self.pattern = Some(p2);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::MinItems(v) => {
+                self.min_items = self.min_items.max(v);
+                Ok(())
+            }
+            Assertion::MaxItems(v) => {
+                match self.max_items {
+                    Some(max) => {
+                        self.max_items = Some(max.min(v));
+                    }
+                    None => {
+                        self.max_items = Some(v);
+                    }
+                }
+                Ok(())
+            }
+            Assertion::Required(v) => {
+                for k in v.into_iter() {
+                    self.required.insert(k);
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl Default for SimpleParcooked {
+    fn default() -> Self {
         Self {
-            assertions: Vec::new(),
+            assertions: Assertions::default(),
             properties: IndexMap::new(),
             pending_properties: HashMap::default(),
             additional_properties: RawSchema::True,
@@ -48,8 +200,29 @@ impl SimpleParcooked {
             items: RawSchema::True,
         }
     }
-    fn assert(&mut self, assertion: Assertion) {
-        self.assertions.push(assertion);
+}
+
+fn pattern_to_regex(pattern: &str) -> RegexAst {
+    let left_anchored = pattern.starts_with('^');
+    let right_anchored = pattern.ends_with('$');
+    let trimmed = pattern.trim_start_matches('^').trim_end_matches('$');
+    let mut result = String::new();
+    if !left_anchored {
+        result.push_str(".*");
+    }
+    // without parens, for a|b we would get .*a|b.* which is (.*a)|(b.*)
+    result.push('(');
+    result.push_str(trimmed);
+    result.push(')');
+    if !right_anchored {
+        result.push_str(".*");
+    }
+    RegexAst::Regex(result)
+}
+
+impl SimpleParcooked {
+    fn assert(&mut self, assertion: Assertion) -> Result<()> {
+        self.assertions.assert(assertion)
     }
     fn apply_to_subinstance(&mut self, applicator: SubInstanceApplicator) {
         match applicator {
@@ -94,7 +267,7 @@ impl SimpleParcooked {
 }
 
 impl RawSchema {
-    fn parcook(self, definitions: &HashMap<String, RawSchema>) -> ParcookedSchema {
+    fn parcook(self, definitions: &HashMap<String, RawSchema>) -> Result<ParcookedSchema> {
         ParcookedSchema::Any.intersect(self, definitions)
     }
     fn intersect(&mut self, other: RawSchema) {
@@ -105,35 +278,41 @@ impl RawSchema {
 }
 
 impl ParcookedSchema {
-    fn intersect(mut self, other: RawSchema, definitions: &HashMap<String, RawSchema>) -> Self {
+    fn intersect(
+        mut self,
+        other: RawSchema,
+        definitions: &HashMap<String, RawSchema>,
+    ) -> Result<Self> {
         let kwds = match other {
-            RawSchema::True => return self,
-            RawSchema::False => return ParcookedSchema::Unsatisfiable("false schema".to_string()),
+            RawSchema::True => return Ok(self),
+            RawSchema::False => {
+                return Ok(ParcookedSchema::Unsatisfiable("false schema".to_string()))
+            }
             RawSchema::Kwds(kwds) => kwds,
         };
         for kwd in kwds {
             match kwd {
                 Keyword::Assertion(assertion) => {
-                    self.assert(assertion);
+                    self.assert(assertion)?;
                 }
                 Keyword::InPlaceApplicator(applicator) => match applicator {
                     InPlaceApplicator::AllOf(subschemas) => {
                         for schema in subschemas {
-                            self = self.intersect(schema, definitions);
+                            self = self.intersect(schema, definitions)?;
                         }
                     }
                     InPlaceApplicator::AnyOf(subschemas) => {
                         let options = subschemas
                             .into_iter()
                             .map(|schema| self.clone().intersect(schema, definitions))
-                            .collect::<Vec<_>>();
+                            .collect::<Result<Vec<_>>>()?;
                         self = ParcookedSchema::AnyOf(options);
                     }
                     InPlaceApplicator::OneOf(subschemas) => {
                         let options = subschemas
                             .into_iter()
                             .map(|schema| self.clone().intersect(schema, definitions))
-                            .collect::<Vec<_>>();
+                            .collect::<Result<Vec<_>>>()?;
                         self = ParcookedSchema::OneOf(options);
                     }
                     InPlaceApplicator::Const(value) => {
@@ -141,44 +320,44 @@ impl ParcookedSchema {
                     }
                     InPlaceApplicator::Ref(uri) => {
                         if let Some(schema) = definitions.get(&uri) {
-                            self = self.intersect(schema.clone(), definitions);
+                            self = self.intersect(schema.clone(), definitions)?;
                         } else {
-                            // TODO: Results
-                            panic!("We should have already crawled this schema...");
+                            bail!("Reference to unknown schema: {}", uri);
                         }
                     }
                 },
                 Keyword::SubInstanceApplicator(applicator) => self.apply_to_subinstance(applicator),
             }
         }
-        self
+        Ok(self)
     }
 
-    fn assert(&mut self, assertion: Assertion) {
+    fn assert(&mut self, assertion: Assertion) -> Result<()> {
         match self {
             ParcookedSchema::Any => {
-                *self = ParcookedSchema::Simple(Box::new(SimpleParcooked::new()));
-                self.assert(assertion);
+                *self = ParcookedSchema::Simple(Box::default());
+                self.assert(assertion)?;
             }
             ParcookedSchema::Unsatisfiable(_) => {
                 // No-op
             }
             ParcookedSchema::AnyOf(subschemas) | ParcookedSchema::OneOf(subschemas) => {
                 for schema in subschemas {
-                    schema.assert(assertion.clone());
+                    schema.assert(assertion.clone())?;
                 }
             }
             ParcookedSchema::Simple(simple) => {
                 // Base case
-                simple.assert(assertion);
+                simple.assert(assertion)?;
             }
         }
+        Ok(())
     }
 
     fn apply_to_subinstance(&mut self, applicator: SubInstanceApplicator) {
         match self {
             ParcookedSchema::Any => {
-                *self = ParcookedSchema::Simple(Box::new(SimpleParcooked::new()));
+                *self = ParcookedSchema::Simple(Box::default());
                 self.apply_to_subinstance(applicator);
             }
             ParcookedSchema::Unsatisfiable(_) => {
@@ -248,11 +427,24 @@ enum Assertion {
     Required(IndexSet<String>),
 }
 
-#[derive(Clone, Debug)]
-struct Types {
-    // todo
+impl Default for Assertions {
+    fn default() -> Self {
+        Assertions {
+            types: Types { bits: Types::ALL },
+            minimum: None,
+            maximum: None,
+            exclusive_minimum: None,
+            exclusive_maximum: None,
+            multiple_of: None,
+            min_length: 0,
+            max_length: None,
+            pattern: None,
+            min_items: 0,
+            max_items: None,
+            required: IndexSet::new(),
+        }
+    }
 }
-
 struct SchemaBuilder {
     definitions: HashMap<String, RawSchema>,
     seen: HashSet<String>,
@@ -620,5 +812,81 @@ impl SchemaBuilder {
             bail!("Unimplemented keywords: {:?}", unimplemented);
         }
         Ok(keywords)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Types {
+    bits: u8,
+}
+impl Types {
+    const NULL: u8 = 1 << 0;
+    const BOOLEAN: u8 = 1 << 1;
+    const NON_INTEGER: u8 = 1 << 2;
+    const INTEGER: u8 = 1 << 3;
+    const STRING: u8 = 1 << 4;
+    const ARRAY: u8 = 1 << 5;
+    const OBJECT: u8 = 1 << 6;
+    const NUMBER: u8 = Self::INTEGER | Self::NON_INTEGER;
+    const ALL: u8 =
+        Self::NULL | Self::BOOLEAN | Self::NUMBER | Self::STRING | Self::ARRAY | Self::OBJECT;
+
+    fn new(bits: u8) -> Self {
+        Types { bits }
+    }
+
+    fn contains(&self, flag: u8) -> bool {
+        self.bits & flag != 0
+    }
+}
+
+impl BitAndAssign for Types {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.bits &= rhs.bits;
+    }
+}
+
+impl BitOrAssign for Types {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.bits |= rhs.bits;
+    }
+}
+
+impl TryFrom<&str> for Types {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        let bits = match value {
+            "null" => Types::NULL,
+            "boolean" => Types::BOOLEAN,
+            "integer" => Types::INTEGER,
+            "string" => Types::STRING,
+            "array" => Types::ARRAY,
+            "object" => Types::OBJECT,
+            "number" => Types::NUMBER,
+            _ => bail!("unknown type: {}", value),
+        };
+        Ok(Types { bits })
+    }
+}
+
+impl TryFrom<&Value> for Types {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &Value) -> Result<Self> {
+        if let Some(s) = value.as_str() {
+            Types::try_from(s)
+        } else if let Some(v) = value.as_array() {
+            let mut types = Types { bits: 0 };
+            for t in v.iter() {
+                let s = t
+                    .as_str()
+                    .ok_or_else(|| anyhow!("type array must be array of strings"))?;
+                types |= Types::try_from(s)?;
+            }
+            Ok(types)
+        } else {
+            bail!("type must be a string or array of strings")
+        }
     }
 }
