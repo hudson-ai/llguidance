@@ -9,7 +9,9 @@ use crate::{HashMap, HashSet};
 use anyhow::{anyhow, bail, Result};
 use derivre::RegexAst;
 use indexmap::{IndexMap, IndexSet};
+use regex_syntax::escape;
 use serde_json::{Map, Value};
+use std::any;
 use std::ops::{BitAndAssign, BitOrAssign};
 
 #[derive(Clone, Debug)]
@@ -320,9 +322,69 @@ impl ParcookedSchema {
                             .collect::<Result<Vec<_>>>()?;
                         self = ParcookedSchema::OneOf(options);
                     }
-                    InPlaceApplicator::Const(value) => {
-                        todo!()
-                    }
+                    InPlaceApplicator::Const(value) => match value {
+                        Value::Null => {
+                            self.assert(Assertion::Types(Types::NULL.into()))?;
+                        }
+                        Value::Bool(_) => {
+                            self.assert(Assertion::Types(Types::BOOLEAN.into()))?;
+                        }
+                        Value::Number(n) => {
+                            let n = n.as_f64().ok_or_else(|| {
+                                anyhow!("const number must be coercible to float")
+                            })?;
+                            self.assert(Assertion::Types(Types::NUMBER.into()))?;
+                            self.assert(Assertion::Minimum(n))?;
+                            self.assert(Assertion::Maximum(n))?;
+                        }
+                        Value::String(s) => {
+                            self.assert(Assertion::Types(Types::STRING.into()))?;
+                            self.assert(Assertion::Pattern(format!("^{}$", escape(&s))))?;
+                        }
+                        Value::Array(a) => {
+                            self.assert(Assertion::Types(Types::ARRAY.into()))?;
+                            self.assert(Assertion::MinItems(1))?;
+                            self.assert(Assertion::MaxItems(1))?;
+                            self.apply_to_subinstance(SubInstanceApplicator::Items {
+                                applicator: RawSchema::False,
+                                prefix_items: a.len(),
+                            });
+                            self.apply_to_subinstance(SubInstanceApplicator::PrefixItems(
+                                a.into_iter()
+                                    .map(|v| {
+                                        RawSchema::Kwds(vec![Keyword::InPlaceApplicator(
+                                            InPlaceApplicator::Const(v),
+                                        )])
+                                    })
+                                    .collect::<Vec<_>>(),
+                            ));
+                        }
+                        Value::Object(o) => {
+                            self.assert(Assertion::Types(Types::OBJECT.into()))?;
+                            self.assert(Assertion::Required(
+                                o.keys()
+                                    .map(|k| k.to_string())
+                                    .collect::<IndexSet<String>>(),
+                            ))?;
+                            self.apply_to_subinstance(
+                                SubInstanceApplicator::AdditionalProperties {
+                                    applicator: RawSchema::False,
+                                    properties: o.keys().map(|k| k.to_string()).collect(),
+                                },
+                            );
+                            self.apply_to_subinstance(SubInstanceApplicator::Properties(
+                                o.iter()
+                                    .map(|(k, v)| {
+                                        let schema =
+                                            RawSchema::Kwds(vec![Keyword::InPlaceApplicator(
+                                                InPlaceApplicator::Const(v.clone()),
+                                            )]);
+                                        Ok((k.clone(), schema))
+                                    })
+                                    .collect::<Result<IndexMap<String, RawSchema>>>()?,
+                            ));
+                        }
+                    },
                     InPlaceApplicator::Ref(uri) => {
                         if let Some(schema) = definitions.get(&uri) {
                             self = self.intersect(schema.clone(), definitions)?;
@@ -842,6 +904,12 @@ impl Types {
 
     fn contains(&self, flag: u8) -> bool {
         self.bits & flag != 0
+    }
+}
+
+impl From<u8> for Types {
+    fn from(bits: u8) -> Self {
+        Types { bits }
     }
 }
 
