@@ -243,21 +243,22 @@ impl SimpleParcooked {
             }
             SubInstanceApplicator::AdditionalProperties {
                 applicator,
-                properties,
+                property_names,
             } => {
                 for (k, v) in self.properties.iter_mut() {
-                    if !properties.contains(k) {
+                    if !property_names.contains(k) {
                         v.intersect(applicator.clone());
                     }
                 }
                 for (k, v) in self.pending_properties.iter_mut() {
-                    if !properties.contains(k) {
+                    if !property_names.contains(k) {
                         v.intersect(applicator.clone());
                     }
                 }
-                for k in properties {
+                for k in property_names {
                     if !self.properties.contains_key(&k) {
-                        self.pending_properties.insert(k, applicator.clone());
+                        self.pending_properties
+                            .insert(k, self.additional_properties.clone());
                     }
                 }
                 self.additional_properties.intersect(applicator);
@@ -368,7 +369,7 @@ impl ParcookedSchema {
                             self.apply_to_subinstance(
                                 SubInstanceApplicator::AdditionalProperties {
                                     applicator: RawSchema::False,
-                                    properties: o.keys().map(|k| k.to_string()).collect(),
+                                    property_names: o.keys().map(|k| k.to_string()).collect(),
                                 },
                             );
                             self.apply_to_subinstance(SubInstanceApplicator::Properties(
@@ -461,7 +462,7 @@ enum SubInstanceApplicator {
     Properties(IndexMap<String, RawSchema>),
     AdditionalProperties {
         applicator: RawSchema,
-        properties: HashSet<String>,
+        property_names: HashSet<String>,
     },
     // Array
     PrefixItems(Vec<RawSchema>),
@@ -668,7 +669,7 @@ impl SchemaBuilder {
                     keywords.push(Keyword::SubInstanceApplicator(
                         SubInstanceApplicator::AdditionalProperties {
                             applicator: self.visit(ctx, ctx.as_resource_ref(v))?,
-                            properties,
+                            property_names: properties,
                         },
                     ));
                 }
