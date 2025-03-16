@@ -237,7 +237,7 @@ impl SimpleParcooked {
                     } else {
                         let mut schema = self.additional_properties.clone();
                         schema.intersect(v);
-                        self.pending_properties.insert(k, schema);
+                        self.properties.insert(k, schema);
                     }
                 }
             }
