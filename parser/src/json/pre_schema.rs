@@ -11,7 +11,6 @@ use derivre::RegexAst;
 use indexmap::{IndexMap, IndexSet};
 use regex_syntax::escape;
 use serde_json::{Map, Value};
-use std::any;
 use std::ops::{BitAndAssign, BitOrAssign};
 
 #[derive(Clone, Debug)]
@@ -558,7 +557,7 @@ impl SchemaBuilder {
         for (k, v) in schema.iter() {
             match k.as_str() {
                 "type" => {
-                    todo!();
+                    keywords.push(Keyword::Assertion(Assertion::Types(Types::try_from(v)?)));
                 }
                 "allOf" => {
                     if let Some(v) = v.as_array() {
