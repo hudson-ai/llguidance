@@ -916,7 +916,7 @@ impl SchemaBuilder {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct Types {
     bits: u8,
 }
@@ -995,5 +995,34 @@ impl TryFrom<&Value> for Types {
         } else {
             bail!("type must be a string or array of strings")
         }
+    }
+}
+
+impl std::fmt::Debug for Types {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut types = Vec::new();
+        if self.contains(Types::NULL) {
+            types.push("null");
+        }
+        if self.contains(Types::BOOLEAN) {
+            types.push("boolean");
+        }
+        if self.contains(Types::NUMBER) {
+            if !self.contains(Types::NON_INTEGER) {
+                types.push("integer");
+            } else {
+                types.push("number");
+            }
+        }
+        if self.contains(Types::STRING) {
+            types.push("string");
+        }
+        if self.contains(Types::ARRAY) {
+            types.push("array");
+        }
+        if self.contains(Types::OBJECT) {
+            types.push("object");
+        }
+        write!(f, "[{}]", types.join(", "))
     }
 }
