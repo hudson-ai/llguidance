@@ -1,5 +1,5 @@
 use anyhow::Result;
-use derivre::{ExprRef, RegexBuilder};
+use derivre::{ExprRef, RegexAst, RegexBuilder};
 use std::collections::{hash_map::Entry, HashMap};
 
 #[derive(Debug)]
@@ -133,6 +133,66 @@ pub fn substring(builder: &mut RegexBuilder, chunks: Vec<&str>) -> Result<ExprRe
     Ok(sa.states[0].regex.unwrap())
 }
 
+pub fn diff_hunk(builder: &mut RegexBuilder, text: &str) -> Result<ExprRef> {
+    let lines = text.split("\n").collect::<Vec<_>>();
+    let mut sa = SuffixAutomaton::from_string(lines);
+    let mut state_stack = vec![0];
+
+    let empty = ExprRef::EMPTY_STRING;
+    let insertions = builder.mk_regex(r"(\n\+.*)*")?;
+
+    while let Some(state_index) = state_stack.last() {
+        let state_index = *state_index;
+        let state = &sa.states[state_index];
+        if state.regex.is_some() {
+            state_stack.pop();
+            continue;
+        }
+
+        if state_stack.is_empty() {
+            sa.states[state_index].regex = Some(empty);
+            state_stack.pop();
+            continue;
+        }
+
+        let prev_stack = state_stack.len();
+        for child_index in state.next.values() {
+            if sa.states[*child_index].regex.is_none() {
+                state_stack.push(*child_index);
+            }
+        }
+
+        if prev_stack != state_stack.len() {
+            continue;
+        }
+
+        let mut options = vec![];
+        for (k, v) in &state.next {
+            let next_expr = sa.states[*v].regex.unwrap();
+            let line_expr = builder.mk(&RegexAst::Concat(vec![
+                RegexAst::Or(vec![
+                    // Context
+                    RegexAst::Literal(" ".to_string()),
+                    // Deletion
+                    RegexAst::Literal("-".to_string()),
+                ]),
+                RegexAst::Literal(k.to_string()),
+                RegexAst::ExprRef(insertions),
+                RegexAst::Literal("\n".to_string()),
+                RegexAst::ExprRef(next_expr),
+            ]))?;
+            options.push(line_expr)
+        }
+        options.push(empty);
+        let expr = builder.mk(&RegexAst::Or(
+            options.into_iter().map(RegexAst::ExprRef).collect(),
+        ))?;
+        sa.states[state_index].regex = Some(expr);
+        state_stack.pop();
+    }
+    Ok(sa.states[0].regex.unwrap())
+}
+
 pub fn chunk_into_chars(input: &str) -> Vec<&str> {
     let mut chunks = vec![];
     let mut char_indices = input.char_indices().peekable();
@@ -186,7 +246,7 @@ pub fn chunk_into_words(input: &str) -> Vec<&str> {
 
 #[cfg(test)]
 mod test {
-    use super::{chunk_into_chars, chunk_into_words, substring};
+    use super::{chunk_into_chars, chunk_into_words, diff_hunk, substring};
     use derivre::{ExprRef, Regex, RegexBuilder};
 
     fn to_regex(builder: RegexBuilder, expr: ExprRef) -> Regex {
@@ -326,5 +386,18 @@ mod test {
         assert!(!regex.is_match("여우가 게으"));
         assert!(regex.is_match("뛰어넘었다."));
         assert!(!regex.is_match("갈색 여가"));
+    }
+
+    #[test]
+    fn test_diff_hunk() {
+        let mut builder = RegexBuilder::new();
+        let original = "line one\nline two\nline three\nline four\n";
+        let expr = diff_hunk(&mut builder, original);
+        let mut regex = to_regex(builder, expr.unwrap());
+        assert!(regex.is_match(" line one\n line two\n line three\n line four\n"));
+        assert!(regex.is_match(" line one\n line two\n+insertion\n line three\n line four\n"));
+        assert!(regex.is_match(" line one\n line two\n+insertion\n-line three\n line four\n"));
+        assert!(!regex.is_match(" line one\n line two\n+insertion\n line four\n"));
+        assert!(regex.is_match(" line one\n line two\n+insertion\n"));
     }
 }
