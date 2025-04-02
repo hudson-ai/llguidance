@@ -150,7 +150,7 @@ pub fn diff_hunk(builder: &mut RegexBuilder, text: &str) -> Result<ExprRef> {
         }
 
         if state.next.is_empty() {
-            sa.states[state_index].regex = Some(insertions);
+            sa.states[state_index].regex = Some(empty);
             state_stack.pop();
             continue;
         }
@@ -169,7 +169,7 @@ pub fn diff_hunk(builder: &mut RegexBuilder, text: &str) -> Result<ExprRef> {
         let mut options = vec![];
         for (k, v) in &state.next {
             let next_expr = sa.states[*v].regex.unwrap();
-            let line_expr = builder.mk(&RegexAst::Concat(vec![
+            let mut line_expr_parts = vec![
                 RegexAst::Or(vec![
                     // Context
                     RegexAst::Literal(" ".to_string()),
@@ -178,19 +178,35 @@ pub fn diff_hunk(builder: &mut RegexBuilder, text: &str) -> Result<ExprRef> {
                 ]),
                 RegexAst::Literal(k.to_string()),
                 RegexAst::ExprRef(insertions),
-                RegexAst::Literal("\n".to_string()),
-                RegexAst::ExprRef(next_expr),
-            ]))?;
+            ];
+            if next_expr != empty {
+                line_expr_parts.push(RegexAst::Or(vec![
+                    RegexAst::ExprRef(empty),
+                    RegexAst::Concat(vec![
+                        RegexAst::Literal("\n".to_string()),
+                        RegexAst::ExprRef(next_expr),
+                    ]),
+                ]))
+            }
+            let line_expr = builder.mk(&RegexAst::Concat(line_expr_parts))?;
             options.push(line_expr)
         }
-        options.push(empty);
         let expr = builder.mk(&RegexAst::Or(
             options.into_iter().map(RegexAst::ExprRef).collect(),
         ))?;
         sa.states[state_index].regex = Some(expr);
         state_stack.pop();
     }
-    Ok(sa.states[0].regex.unwrap())
+    let expr = sa.states[0].regex.unwrap();
+    let leading_insertions = builder.mk_regex(r"(\+.*\n)*")?;
+    let final_expr = builder.mk(&RegexAst::Or(vec![
+        RegexAst::ExprRef(empty),
+        RegexAst::Concat(vec![
+            RegexAst::ExprRef(leading_insertions),
+            RegexAst::ExprRef(expr),
+        ]),
+    ]))?;
+    Ok(final_expr)
 }
 
 pub fn chunk_into_chars(input: &str) -> Vec<&str> {
@@ -391,13 +407,79 @@ mod test {
     #[test]
     fn test_diff_hunk() {
         let mut builder = RegexBuilder::new();
-        let original = "line one\nline two\nline three\nline four\n";
-        let expr = diff_hunk(&mut builder, original);
-        let mut regex = to_regex(builder, expr.unwrap());
-        assert!(regex.is_match(" line one\n line two\n line three\n line four\n"));
-        assert!(regex.is_match(" line one\n line two\n+insertion\n line three\n line four\n"));
-        assert!(regex.is_match(" line one\n line two\n+insertion\n-line three\n line four\n"));
-        assert!(!regex.is_match(" line one\n line two\n+insertion\n line four\n"));
-        assert!(regex.is_match(" line one\n line two\n+insertion\n"));
+        let original = "line one\nline two\nline three\nline four";
+        let expr = diff_hunk(&mut builder, original).unwrap();
+        let mut regex = to_regex(builder, expr);
+
+        let good_diffs: &[&str] = &[
+            // Single-Line Modifications (No Context)
+            "-line one\n+line one updated",
+            "-line two\n+line two updated",
+            "-line three\n+line three updated",
+            "-line four\n+line line four updated",
+            // Single-Line Modifications (With Minimal Context)
+            "-line one\n+line one updated\n line two",
+            " line one\n-line two\n+line two updated",
+            "-line two\n+line two updated\n line three",
+            " line two\n-line three\n+line three updated",
+            "-line three\n+line three updated\n line four",
+            " line three\n-line four\n+line four updated",
+            // Deletions (No Context or Partial Context)
+            "-line one",
+            "-line two",
+            "-line three",
+            "-line four",
+            " line one\n-line two",
+            "-line two\n line three",
+            " line two\n-line three",
+            "-line three\n line four",
+            "-line two\n-line three",
+            " line one\n-line two\n-line three",
+            "-line two\n-line three\n line four",
+            // Insertions (No Context or With Some Context)
+            "+new first line\n line one",
+            " line four\n+new last line",
+            " line two\n+inserted line\n line three",
+            " line three\n+inserted line\n line four",
+            // Multi-Line Modifications
+            "-line two\n-line three\n+line two and three merged",
+            " line one\n-line two\n-line three\n+line two and three merged",
+            "-line two\n-line three\n+line two and three merged\n line four",
+            " line one\n-line two\n-line three\n+line two and three merged\n line four",
+            " line two\n-line three\n-line four\n+line three updated\n+line four updated",
+            "-line one\n-line two\n+line one updated\n+line two updated\n line three",
+            " line one\n-line two\n-line three\n+line three\n+line two\n line four",
+        ];
+        let bad_diffs: &[&str] = &[
+            // Diff expects a context line that doesn't match (should be "line one", not "line zero")
+            " line zero\n-line one\n+line one updated",
+            // Diff tries to delete a line that doesn't exist in the file
+            "-nonexistent line\n+line nonexistent updated",
+            // Diff includes trailing context (" line five") that is not present (file has "line four")
+            " line one\n-line two\n+line two updated\n line three\n line five",
+            // Diff expects deletion of "line three" immediately after "line one"
+            // but the file has "line two" in between
+            " line one\n-line three\n+line three updated",
+            // Diff provides context "line one" then "line three" and then deletes "line two"
+            // which doesn't match the sequential order in the file
+            " line one\n line three\n-line two\n+line two updated",
+            // Diff's trailing context " line five" does not exist (file ends with "line four")
+            " line two\n-line three\n+line three updated\n line four\n line five",
+            // Diff tries to delete "line two modified", but the file contains "line two"
+            "-line two modified\n+line TWO\n line three",
+            // Diff expects context and deletion for "line zero", which is absent
+            " line zero\n-line zero\n+line zero updated",
+            // Diff hunk ordering is incorrect (addition comes before deletion)
+            " line two\n+line three updated\n-line two",
+            // Diff expects trailing context " line five" after modifying lines two and three,
+            // but the file provides "line four"
+            " line one\n-line two\n-line three\n+line two and three merged\n line five",
+        ];
+        for diff in good_diffs {
+            assert!(regex.is_match(diff), "Failed to match: {}", diff);
+        }
+        for diff in bad_diffs {
+            assert!(!regex.is_match(diff), "Matched when it shouldn't: {}", diff);
+        }
     }
 }
