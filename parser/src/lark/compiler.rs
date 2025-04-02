@@ -1,6 +1,6 @@
 use crate::{
     grammar_builder::{GrammarResult, RegexId},
-    substring::substring,
+    substring::{diff_hunk, substring},
     HashMap, HashSet,
 };
 use anyhow::{anyhow, bail, ensure, Result};
@@ -670,6 +670,9 @@ fn compile_lark_regex(builder: &mut GrammarBuilder, l: RegexExt) -> Result<Regex
     if l.substring_chars.is_some() {
         fields_set.push("substring_chars");
     }
+    if l.diff_hunk.is_some() {
+        fields_set.push("diff_hunk");
+    }
     if fields_set.is_empty() {
         bail!("no fields set on %regex");
     }
@@ -685,6 +688,8 @@ fn compile_lark_regex(builder: &mut GrammarBuilder, l: RegexExt) -> Result<Regex
         substring(bld, chunk_into_chars(&s))?
     } else if let Some(s) = l.substring_chunks {
         substring(bld, s.iter().map(|s| s.as_str()).collect())?
+    } else if let Some(s) = l.diff_hunk {
+        diff_hunk(bld, &s)?
     } else {
         unreachable!()
     };

@@ -170,6 +170,8 @@ pub struct RegexExt {
     pub substring_words: Option<String>,
     /// Similar to `substring_chunks: s.split('')`
     pub substring_chars: Option<String>,
+    /// The lexeme should correspond to a git diff hunk that should apply to the given text.
+    pub diff_hunk: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
