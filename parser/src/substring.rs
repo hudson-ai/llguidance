@@ -134,7 +134,7 @@ pub fn substring(builder: &mut RegexBuilder, chunks: Vec<&str>) -> Result<ExprRe
 }
 
 pub fn diff_hunk(builder: &mut RegexBuilder, text: &str) -> Result<ExprRef> {
-    let lines = text.split("\n").collect::<Vec<_>>();
+    let lines = text.lines().collect::<Vec<_>>();
     let mut sa = SuffixAutomaton::from_string(lines);
     let mut state_stack = vec![0];
 
@@ -149,8 +149,8 @@ pub fn diff_hunk(builder: &mut RegexBuilder, text: &str) -> Result<ExprRef> {
             continue;
         }
 
-        if state_stack.is_empty() {
-            sa.states[state_index].regex = Some(empty);
+        if state.next.is_empty() {
+            sa.states[state_index].regex = Some(insertions);
             state_stack.pop();
             continue;
         }
