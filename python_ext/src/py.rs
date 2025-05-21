@@ -241,14 +241,7 @@ impl PyTokenizer {
             }
         }
 
-        // we want decode_bytes([EOS]) etc to be empty
-        tokens[tok_eos as usize] = vec![];
-        // if let Some(t) = tok_bos {
-        //     tokens[t as usize] = vec![];
-        // }
-
         let info = TokRxInfo::new(tokens.len() as u32, tok_eos);
-
         let tok_trie = TokTrie::from(&info, &tokens);
         Ok(PyTokenizer {
             tok_trie: Arc::new(tok_trie),
