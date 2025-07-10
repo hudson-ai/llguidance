@@ -279,10 +279,12 @@ impl GrammarBuilder {
         r
     }
 
-    pub fn token_ranges(&mut self, token_ranges: Vec<RangeInclusive<u32>>) -> Result<NodeRef> {
+    pub fn token_ranges(
+        &mut self,
+        token_ranges: Vec<RangeInclusive<u32>>,
+        negate: bool,
+    ) -> Result<NodeRef> {
         self.check_limits()?;
-
-        let name = token_ranges_to_string(&token_ranges);
 
         let trie = self.tok_env.as_ref().map(|t| t.tok_trie());
         for r in &token_ranges {
@@ -296,10 +298,50 @@ impl GrammarBuilder {
             }
         }
 
+        let token_ranges = if negate {
+            let trie = if let Some(trie) = &trie {
+                trie
+            } else {
+                bail!("negation of token ranges is not supported without a tokenizer");
+            };
+            let (min, max) = (0u32, trie.vocab_size() as u32 - 1);
+            ensure!(
+                !token_ranges.is_empty(),
+                "negation of empty token ranges is not supported"
+            );
+            let mut sorted = token_ranges.clone();
+            sorted.sort_by_key(|r| *r.start());
+
+            let mut negated = vec![];
+            let mut current = min;
+            for range in sorted {
+                let (&start, &end) = (range.start(), range.end());
+                ensure!(start <= end, "Invalid token range: {:?}", range);
+                if end < current {
+                    // skip this range, it is already covered by the previous one
+                    continue;
+                }
+                if start > current {
+                    // add a range from the current to the start of this one
+                    negated.push(current..=start - 1);
+                }
+                // update the current to the end of this range
+                current = current.max(end + 1);
+            }
+            if current <= max {
+                // add the last range from the current to the max
+                negated.push(current..=max);
+            }
+            negated
+        } else {
+            token_ranges
+        };
+
         if trie.is_none() {
             self.add_warning("no tokenizer - can't validate <[...]>".to_string());
         }
 
+        let name = token_ranges_to_string(&token_ranges);
         let id = self.regex.spec.add_special_token(name, token_ranges)?;
         Ok(self.lexeme_to_node(id))
     }
