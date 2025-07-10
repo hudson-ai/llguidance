@@ -7,7 +7,7 @@ use crate::{
     hashcons::{HashCons, HashId},
     HashMap,
 };
-use anyhow::{bail, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use derivre::{ExprRef, RegexAst};
 use std::ops::RangeInclusive;
 use toktrie::{bytes::limit_str, TokEnv, INVALID_TOKEN};
@@ -371,6 +371,21 @@ impl GrammarBuilder {
             .spec
             .add_special_token(token.to_string(), vec![tok_id..=tok_id])?;
         Ok(self.lexeme_to_node(idx))
+    }
+
+    pub fn any_token(&mut self) -> Result<NodeRef> {
+        self.check_limits()?;
+        let trie = self
+            .tok_env
+            .as_ref()
+            .ok_or_else(|| anyhow!("no tokenizer - can't validate <any_token>"))?
+            .tok_trie();
+        let (low, high) = (0, trie.vocab_size() as u32 - 1);
+        let id = self
+            .regex
+            .spec
+            .add_special_token("<[*]>".to_string(), vec![low..=high])?;
+        Ok(self.lexeme_to_node(id))
     }
 
     pub fn gen_grammar(&mut self, data: GenGrammarOptions, props: NodeProps) -> NodeRef {

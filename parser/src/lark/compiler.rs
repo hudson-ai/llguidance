@@ -311,6 +311,9 @@ impl Compiler {
                         return self.do_rule(name, Some(param.clone()));
                     }
                     Value::SpecialToken(s) => {
+                        if s == "<[*]>" {
+                            return self.builder.any_token();
+                        }
                         if s.starts_with("<[") && s.ends_with("]>") {
                             let s = &s[2..s.len() - 2];
                             let negate = s.starts_with("^");
