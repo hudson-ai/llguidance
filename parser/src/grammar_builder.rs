@@ -375,17 +375,18 @@ impl GrammarBuilder {
 
     pub fn any_token(&mut self) -> Result<NodeRef> {
         self.check_limits()?;
-        let trie = self
-            .tok_env
-            .as_ref()
-            .ok_or_else(|| anyhow!("no tokenizer - can't validate <any_token>"))?
-            .tok_trie();
-        let (low, high) = (0, trie.vocab_size() as u32 - 1);
-        let id = self
+        let range = if let Some(te) = &self.tok_env {
+            let trie = te.tok_trie();
+            0..=trie.vocab_size() as u32 - 1
+        } else {
+            self.add_warning("no tokenizer - can't validate <any_token>".to_string());
+            INVALID_TOKEN..=INVALID_TOKEN
+        };
+        let idx = self
             .regex
             .spec
-            .add_special_token("<[*]>".to_string(), vec![low..=high])?;
-        Ok(self.lexeme_to_node(id))
+            .add_special_token("<[*]>".to_string(), vec![range])?;
+        Ok(self.lexeme_to_node(idx))
     }
 
     pub fn gen_grammar(&mut self, data: GenGrammarOptions, props: NodeProps) -> NodeRef {
