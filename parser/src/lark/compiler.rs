@@ -339,7 +339,11 @@ impl Compiler {
                                 ranges.push(start..=end);
                             }
                             ensure!(!ranges.is_empty(), "empty token range");
-                            return self.builder.token_ranges(ranges, negate);
+                            return if negate {
+                                self.builder.negated_token_ranges(ranges)
+                            } else {
+                                self.builder.token_ranges(ranges)
+                            };
                         }
                         return self.builder.special_token(s);
                     }

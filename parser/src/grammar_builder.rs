@@ -7,7 +7,7 @@ use crate::{
     hashcons::{HashCons, HashId},
     HashMap,
 };
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{bail, ensure, Result};
 use derivre::{ExprRef, RegexAst};
 use std::ops::RangeInclusive;
 use toktrie::{bytes::limit_str, TokEnv, INVALID_TOKEN};
@@ -279,11 +279,7 @@ impl GrammarBuilder {
         r
     }
 
-    pub fn token_ranges(
-        &mut self,
-        token_ranges: Vec<RangeInclusive<u32>>,
-        negate: bool,
-    ) -> Result<NodeRef> {
+    pub fn token_ranges(&mut self, token_ranges: Vec<RangeInclusive<u32>>) -> Result<NodeRef> {
         self.check_limits()?;
 
         let trie = self.tok_env.as_ref().map(|t| t.tok_trie());
@@ -298,23 +294,45 @@ impl GrammarBuilder {
             }
         }
 
-        let token_ranges = if negate {
-            let trie = if let Some(trie) = &trie {
-                trie
-            } else {
-                bail!("negation of token ranges is not supported without a tokenizer");
-            };
+        if trie.is_none() {
+            self.add_warning("no tokenizer - can't validate <[...]>".to_string());
+        }
+
+        let name = token_ranges_to_string(&token_ranges);
+        let id = self.regex.spec.add_special_token(name, token_ranges)?;
+        Ok(self.lexeme_to_node(id))
+    }
+
+    pub fn negated_token_ranges(
+        &mut self,
+        token_ranges: Vec<RangeInclusive<u32>>,
+    ) -> Result<NodeRef> {
+        let negated_ranges = if let Some(te) = &self.tok_env {
+            let trie = te.tok_trie();
+
             let (min, max) = (0u32, trie.vocab_size() as u32 - 1);
             ensure!(
                 !token_ranges.is_empty(),
                 "negation of empty token ranges is not supported"
             );
+
             let mut sorted = token_ranges.clone();
             sorted.sort_by_key(|r| *r.start());
 
             let mut negated = vec![];
             let mut current = min;
             for range in sorted {
+                ensure!(
+                    *range.end() < trie.vocab_size() as u32,
+                    "Token range end too large: {:?}",
+                    range.end()
+                );
+                ensure!(
+                    range.start() <= range.end(),
+                    "Invalid token range: {:?}",
+                    range
+                );
+
                 let (&start, &end) = (range.start(), range.end());
                 ensure!(start <= end, "Invalid token range: {:?}", range);
                 if end < current {
@@ -334,15 +352,12 @@ impl GrammarBuilder {
             }
             negated
         } else {
-            token_ranges
+            self.add_warning("no tokenizer - can't validate <[^...]>".to_string());
+            vec![INVALID_TOKEN..=INVALID_TOKEN]
         };
 
-        if trie.is_none() {
-            self.add_warning("no tokenizer - can't validate <[...]>".to_string());
-        }
-
-        let name = token_ranges_to_string(&token_ranges);
-        let id = self.regex.spec.add_special_token(name, token_ranges)?;
+        let name = token_ranges_to_string(&negated_ranges);
+        let id = self.regex.spec.add_special_token(name, negated_ranges)?;
         Ok(self.lexeme_to_node(id))
     }
 
