@@ -318,6 +318,17 @@ fn test_lark_syntax_general() {
     lark_err_test(r#"start: <[,]>"#, "empty token range");
     lark_err_test(r#"start: <[200-100]>"#, "invalid token range");
     lark_err_test(r#"start: <[200 - 100]>"#, "lexer error");
+    lark_ok(r#"start: <[*]>"#);
+    lark_err_test(
+        r#"start: <[^*]>"#,
+        "negated wildcard token <[^*]> is not supported",
+    );
+    lark_err_test(
+        r#"start: <[*,100]>"#,
+        "wildcard token range '*' must not contain additional tokens",
+    );
+    lark_ok(r#"start: <[^100,200-300]>"#);
+    lark_ok(r#"start: <[^100-200,100-300]>"#);
 
     lark_err_test(
         r#"
