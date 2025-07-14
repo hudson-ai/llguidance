@@ -760,6 +760,30 @@ fn test_ll_token_ranges() {
         "#,
         &["<|system|>", "✖<|system|>‧foo‧≺EOS≻"],
     );
+
+    check_lark_grammar(
+        r#"start: <[*]> /.*/
+        "#,
+        &["", "<|system|>‧foo‧≺EOS≻"],
+    );
+
+    check_lark_grammar(
+        r#"start: <[*]> /.*/
+        "#,
+        &["", "foo‧≺EOS≻"],
+    );
+
+    check_lark_grammar(
+        r#"start: <[^32001-32005,32007-32010]> /.*/
+        "#,
+        &["", "foo‧≺EOS≻"],
+    );
+
+    check_lark_grammar(
+        r#"start: <[^32001-32005,32007-32010]> /.*/
+        "#,
+        &["", "<|system|>‧foo‧≺EOS≻"],
+    );
 }
 
 #[test]
