@@ -30,11 +30,13 @@ def from_tokenizer(
         # this will JSON-serialize the Rust impl of the tokenizer,
         # including added tokens from tokenizer_config.json
         # (which may be missing from tokenizer.json)
-        backend_tokenizer = copy(hf_tokenizer.backend_tokenizer)
+        backend_tokenizer = copy(
+            hf_tokenizer.backend_tokenizer  # type: ignore[attr-defined]
+        )
         # disable padding and truncation on copy before converting to string
         backend_tokenizer.no_padding()
         backend_tokenizer.no_truncation()
-        s = backend_tokenizer.to_str()  # type: ignore
+        s = backend_tokenizer.to_str()
         # This is probably not needed - it should figure it out by itself
         # if n_vocab is None:
         #     n_vocab = hf_tokenizer.backend_tokenizer.get_vocab_size(with_added_tokens=True)
