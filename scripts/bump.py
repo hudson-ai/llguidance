@@ -88,9 +88,8 @@ def generate_changelog(version: str) -> str:
             return ""
         trimmed = text[start:]
         date_str = datetime.utcnow().strftime("%Y-%m-%d")
-        replaced = re.sub(r"\[Unreleased\]", f"[{version}]", trimmed)
-        replaced = re.sub(r"\.\.\.HEAD\)", f"...{version}) {date_str}",
-                          replaced)
+        replaced = re.sub(r"\[Unreleased\]", f"[v{version}]", trimmed)
+        replaced = re.sub(r"\.\.\.HEAD\)", f"...v{version}) {date_str}", replaced)
         return replaced
     except FileNotFoundError:
         return "auto-changelog is not installed. Run `npm install -g auto-changelog` to install it."
