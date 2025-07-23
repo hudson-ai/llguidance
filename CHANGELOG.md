@@ -4,109 +4,109 @@ All notable changes to this project will be documented in this file. Dates are d
 
 If a release doesn't introduce any interesting changes (build fixes etc.), it's skipped.
 
-#### [1.1.1](https://github.com/guidance-ai/llguidance/compare/v1.1.0...1.1.1) 2025-07-23
+#### [v1.1.1](https://github.com/guidance-ai/llguidance/compare/v1.1.0...v1.1.1) 2025-07-23
 
 - prevent error state when calling `try_consume_tokens` after parser is stopped [`#213`](https://github.com/guidance-ai/llguidance/pull/213); fixes [`#211`](https://github.com/guidance-ai/llguidance/issues/211)
 - set parser stop condition in `try_consume_tokens` even when some tokens are rejected [`#212`](https://github.com/guidance-ai/llguidance/pull/212)
 
-#### [1.1.0](https://github.com/guidance-ai/llguidance/compare/v1.0.1...1.1.0) 2025-07-18
+#### [v1.1.0](https://github.com/guidance-ai/llguidance/compare/v1.0.1...v1.1.0) 2025-07-18
 
 - disable hf tokenizer truncation and padding [`#205`](https://github.com/guidance-ai/llguidance/pull/205); fixes [`#1322`](https://github.com/guidance-ai/guidance/issues/1322)
 - llama_cpp tokenizers: infer added tokens starting/ending with &lt; and &gt; to be special tokens [`#202`](https://github.com/guidance-ai/llguidance/pull/202)
 - add lark syntax for "any token" and negation of token ranges [`#201`](https://github.com/guidance-ai/llguidance/pull/201)
 - add de-recursion cook book to docs [`#199`](https://github.com/guidance-ai/llguidance/pull/199)
 
-#### [1.0.1](https://github.com/guidance-ai/llguidance/compare/v1.0.0...1.0.1) 2025-07-03
+#### [v1.0.1](https://github.com/guidance-ai/llguidance/compare/v1.0.0...v1.0.1) 2025-07-03
 
 - fix: tokenizers normalizers sequence api changed [`#195`](https://github.com/guidance-ai/llguidance/pull/195)
 - Strip debug info from the wheels [`#194`](https://github.com/guidance-ai/llguidance/pull/194)
 
 Thank you @ammar-elsabe and @Ahajha!
 
-#### [1.0.0](https://github.com/guidance-ai/llguidance/compare/v0.7.30...1.0.0) 2025-06-23
+#### [v1.0.0](https://github.com/guidance-ai/llguidance/compare/v0.7.30...v1.0.0) 2025-06-23
 
 This is identical to `0.7.30`, but indicates intended stability and from now on we'll try to follow semver.
 
-#### [0.7.30](https://github.com/guidance-ai/llguidance/compare/v0.7.29...0.7.30) 2025-06-23
+#### [v0.7.30](https://github.com/guidance-ai/llguidance/compare/v0.7.29...v0.7.30) 2025-06-23
 
 - parametric grammars [`#192`](https://github.com/guidance-ai/llguidance/pull/192)
 - allow for tokens up to ~2k bytes; fixes #188 [`#188`](https://github.com/guidance-ai/llguidance/issues/188)
 
-#### [0.7.29](https://github.com/guidance-ai/llguidance/compare/v0.7.28...0.7.29) 2025-06-06
+#### [v0.7.29](https://github.com/guidance-ai/llguidance/compare/v0.7.28...v0.7.29) 2025-06-06
 
 - cargo fmt
 
-#### [0.7.28](https://github.com/guidance-ai/llguidance/compare/v0.7.27...0.7.28) 2025-06-06
+#### [v0.7.28](https://github.com/guidance-ai/llguidance/compare/v0.7.27...v0.7.28) 2025-06-06
 
 - fix lexer_stack=... panic with numeric tokens [`4e91b0f`](https://github.com/guidance-ai/llguidance/commit/4e91b0fa0c03572a5fc221ac0e0b05035af9dcfa)
 
-#### [0.7.27](https://github.com/guidance-ai/llguidance/compare/v0.7.26...0.7.27) 2025-06-04
+#### [v0.7.27](https://github.com/guidance-ai/llguidance/compare/v0.7.26...v0.7.27) 2025-06-04
 
 - add toktrie_tiktoken and llguidance.tiktoken.lltokenizer_from_encoding [`#154`](https://github.com/guidance-ai/llguidance/issues/154)
 - implement clone on StopController [`#185`](https://github.com/guidance-ai/llguidance/issues/185)
 
-#### [0.7.26](https://github.com/guidance-ai/llguidance/compare/v0.7.25...0.7.26) 2025-05-30
+#### [v0.7.26](https://github.com/guidance-ai/llguidance/compare/v0.7.25...v0.7.26) 2025-05-30
 
 - add support for & and ~ in lark regexes [`96fcee3`](https://github.com/guidance-ai/llguidance/commit/96fcee373697b57bead94d1bc06c17cf1c6134e4)
 - dump grammar in errors in LLInterpreter [`#183`](https://github.com/guidance-ai/llguidance/pull/183)
 - don't check lexer bytes invariant when we cannot rollback [`ec22083`](https://github.com/guidance-ai/llguidance/commit/ec220837051513a70177974ca389b7bf387455f1)
 
 
-#### [0.7.25](https://github.com/guidance-ai/llguidance/compare/v0.7.24...0.7.25) 2025-05-28
+#### [v0.7.25](https://github.com/guidance-ai/llguidance/compare/v0.7.24...v0.7.25) 2025-05-28
 
 - add parse_special=False to tokenize_str/bytes() in python [`#181`](https://github.com/guidance-ai/llguidance/pull/181)
 
-#### [0.7.24](https://github.com/guidance-ai/llguidance/compare/v0.7.23...0.7.24) 2025-05-23
+#### [v0.7.24](https://github.com/guidance-ai/llguidance/compare/v0.7.23...v0.7.24) 2025-05-23
 
 - add the sentinel token hack, fixes #180 [`#180`](https://github.com/guidance-ai/llguidance/issues/180)
 
-#### [0.7.23](https://github.com/guidance-ai/llguidance/compare/v0.7.22...0.7.23) 2025-05-22
+#### [v0.7.23](https://github.com/guidance-ai/llguidance/compare/v0.7.22...v0.7.23) 2025-05-22
 
 - native llama.cpp tokenizer support [`#179`](https://github.com/guidance-ai/llguidance/pull/179)
 - improve special token detection in HF tokenizers [`6cae393`](https://github.com/guidance-ai/llguidance/commit/6cae393b9c04fe67621615ff22b46beab512d069)
 
-#### [0.7.22](https://github.com/guidance-ai/llguidance/compare/v0.7.21...0.7.22) 2025-05-21
+#### [v0.7.22](https://github.com/guidance-ai/llguidance/compare/v0.7.21...v0.7.22) 2025-05-21
 
 - Keep EOS token bytes in `TokenizerWrapper` [`#178`](https://github.com/guidance-ai/llguidance/pull/178)
 - Stop using prefix/sentinel strings for `TokenizerWrapper` [`#175`](https://github.com/guidance-ai/llguidance/pull/175)
 - avoid taking poisoned locks, see [`#174`](https://github.com/guidance-ai/llguidance/issues/174) [`d41aa9a`](https://github.com/guidance-ai/llguidance/commit/d41aa9a4427967708a951506b2bc0e395871b6c8); thanks [@g-eoj](https://github.com/g-eoj)
 
-#### [0.7.21](https://github.com/guidance-ai/llguidance/compare/v0.7.20...0.7.21) 2025-05-20
+#### [v0.7.21](https://github.com/guidance-ai/llguidance/compare/v0.7.20...v0.7.21) 2025-05-20
 
 - include parser state in errors [`82e34da`](https://github.com/guidance-ai/llguidance/commit/82e34da704d22f04979d8cbc54a0ac00885a277d)
 - tighten email format in JSON schema [`7454ea9`](https://github.com/guidance-ai/llguidance/commit/7454ea9df958f8bcc42e6bb986d6de397de65b3e)
 
-#### [0.7.20](https://github.com/guidance-ai/llguidance/compare/v0.7.19...0.7.20) 2025-05-15
+#### [v0.7.20](https://github.com/guidance-ai/llguidance/compare/v0.7.19...v0.7.20) 2025-05-15
 
 - use fancy-regex instead of onig as tokenizers regex library [`#172`](https://github.com/guidance-ai/llguidance/pull/172)
   - fixes compilation on GCC 15, thanks [@Slowki](https://github.com/Slowki)
 - msrv 1.80 support (incl. derivre bump) [`c89e386`](https://github.com/guidance-ai/llguidance/commit/c89e386685cd911a89fd47df225de88f88c10883), thank you [@nteodosio](https://github.com/nteodosio) for initial [PR](https://github.com/guidance-ai/llguidance/pull/170)!
 
-#### [0.7.19](https://github.com/guidance-ai/llguidance/compare/v0.7.18...0.7.19) 2025-04-24
+#### [v0.7.19](https://github.com/guidance-ai/llguidance/compare/v0.7.18...v0.7.19) 2025-04-24
 
 - fix a numeric token bug [`1f59edf`](https://github.com/guidance-ai/llguidance/commit/1f59edfc49b44cfba74b2380f34874a0778d9441)
 
-#### [0.7.18](https://github.com/guidance-ai/llguidance/compare/v0.7.17...0.7.18) 2025-04-22
+#### [v0.7.18](https://github.com/guidance-ai/llguidance/compare/v0.7.17...v0.7.18) 2025-04-22
 
 - apply x-guidance also in %json{} [`2627891`](https://github.com/guidance-ai/llguidance/commit/2627891c72c7e38062cd3e052f1de146d2e21635)
 - more sensible llg_validate_grammar() signature [`41928c0`](https://github.com/guidance-ai/llguidance/commit/41928c07298e69e3c8adc4a3c1f43ef9b1cc1c6b)
 
-#### [0.7.17](https://github.com/guidance-ai/llguidance/compare/v0.7.16...0.7.17) 2025-04-22
+#### [v0.7.17](https://github.com/guidance-ai/llguidance/compare/v0.7.16...v0.7.17) 2025-04-22
 
 - support for min/maxProperties in JSON Schema [`#168`](https://github.com/guidance-ai/llguidance/issues/168)
 - give priority to &lt;[123]&gt; over "foo" in grammar [`3e9f3b5`](https://github.com/guidance-ai/llguidance/commit/3e9f3b5e8c1cac92daab6e9709f01ebccc20342b)
 
-#### [0.7.16](https://github.com/guidance-ai/llguidance/compare/v0.7.15...0.7.16) 2025-04-17
+#### [v0.7.16](https://github.com/guidance-ai/llguidance/compare/v0.7.15...v0.7.16) 2025-04-17
 
 - fix special token tokenization [`ae7870f`](https://github.com/guidance-ai/llguidance/commit/ae7870f05ca0de68599088607ba742b7071f92ad)
 
-#### [0.7.15](https://github.com/guidance-ai/llguidance/compare/v0.7.14...0.7.15) 2025-04-16
+#### [v0.7.15](https://github.com/guidance-ai/llguidance/compare/v0.7.14...v0.7.15) 2025-04-16
 
 - support for patternProperties in JSON schema [`#167`](https://github.com/guidance-ai/llguidance/pull/167)
 - add lenient option to JSON schemas [`#163`](https://github.com/guidance-ai/llguidance/pull/163) [`#136`](https://github.com/guidance-ai/llguidance/issues/136)
 - Add llg_validate_grammar() in C FFI [`e5c21cf`](https://github.com/guidance-ai/llguidance/commit/e5c21cf480a17e6b310e46b24b272576cfd9c4c6)
 
-#### [0.7.14](https://github.com/guidance-ai/llguidance/compare/v0.7.13...0.7.14) 2025-04-11
+#### [v0.7.14](https://github.com/guidance-ai/llguidance/compare/v0.7.13...v0.7.14) 2025-04-11
 
 - support %lark { ... } syntax for nested grammars [`#157`](https://github.com/guidance-ai/llguidance/pull/157)
 - treat \d and \w in json schema as ASCII; fix ^$ anchors [`#158`](https://github.com/guidance-ai/llguidance/issues/158)
@@ -115,19 +115,19 @@ This is identical to `0.7.30`, but indicates intended stability and from now on 
 - expose regex_to_lark() in Rust and Python; add \d\w\s replacement [`78fb32f`](https://github.com/guidance-ai/llguidance/commit/78fb32fe2745d30ca94a62b00e5a7299750d80b0)
 - fix usage of / vs \* in python signatures [`ca73c2a`](https://github.com/guidance-ai/llguidance/commit/ca73c2abd44e75d569230b942f53c72b052ed2ab)
 
-#### [0.7.13](https://github.com/guidance-ai/llguidance/compare/v0.7.12...0.7.13) 2025-04-05
+#### [v0.7.13](https://github.com/guidance-ai/llguidance/compare/v0.7.12...v0.7.13) 2025-04-05
 
 - expose LLParserLimits in Python API [`598dc8f`](https://github.com/guidance-ai/llguidance/commit/598dc8f37f69f51244e54d9885445abf02a515a7)
 - pre-compute lexer states for particularly large regexes (can be disabled in ParserLimits)
 
-#### [0.7.12](https://github.com/guidance-ai/llguidance/compare/v0.7.11...0.7.12) 2025-04-04
+#### [v0.7.12](https://github.com/guidance-ai/llguidance/compare/v0.7.11...v0.7.12) 2025-04-04
 
 - performance optimizations
 - use factory in C FFI (otherwise slicer was not used)
 - add some null checks and safety comments in C FFI
 - implement subgrammar lexeme class merging; fixes [`#113`](https://github.com/guidance-ai/llguidance/issues/113)
 
-#### [0.7.11](https://github.com/guidance-ai/llguidance/compare/v0.7.10...0.7.11) 2025-03-27
+#### [v0.7.11](https://github.com/guidance-ai/llguidance/compare/v0.7.10...v0.7.11) 2025-03-27
 
 - add StructTag python API; fixes [`#146`](https://github.com/guidance-ai/llguidance/issues/146)
 - fix handling of AddedToken.special (gemma tokenizer, fixes [`#147`](https://github.com/guidance-ai/llguidance/issues/147))
