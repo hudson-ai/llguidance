@@ -293,8 +293,6 @@ fn test_try_consume_after_stop() {
 
     let parser = make_parser(lark);
     let tokens = get_tok_env().tokenize("blahblahblahblahstopblah");
-    println!("tokens: {:?}", tokens);
-
     let mut matcher = Matcher::new(Ok(parser));
 
     for tok in tokens.iter() {
