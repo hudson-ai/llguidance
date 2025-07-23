@@ -284,3 +284,26 @@ fn test_lexer_inv_crash() {
         matcher.consume_token(t).unwrap();
     }
 }
+
+#[test]
+fn test_try_consume_after_stop() {
+    let lark = r#"
+        start: "blah"* "stop"
+    "#;
+
+    let parser = make_parser(lark);
+    let tokens = get_tok_env().tokenize("blahblahblahblahstopblah");
+    println!("tokens: {:?}", tokens);
+
+    let mut matcher = Matcher::new(Ok(parser));
+
+    for tok in tokens.iter() {
+        let is_stopped = matcher.is_stopped();
+        matcher.try_consume_tokens(&[*tok]).unwrap();
+        if is_stopped {
+            assert!(!matcher.is_error());
+            return;
+        }
+    }
+    unreachable!();
+}

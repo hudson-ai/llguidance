@@ -333,13 +333,6 @@ impl TokenParser {
 
     fn check_initialized(&self, lbl: &str) -> Result<()> {
         ensure!(!self.is_fresh, "process_prompt() not called in {}", lbl);
-        ensure!(
-            self.stop_reason == StopReason::NotStopped,
-            "parser stopped in {}; {}",
-            lbl,
-            self.error_message()
-                .unwrap_or("no error message".to_string())
-        );
         Ok(())
     }
 
