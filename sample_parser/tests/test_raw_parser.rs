@@ -293,8 +293,6 @@ fn test_stop_when_try_consume_fails() {
 
     let parser = make_parser(lark);
     let tokens = get_tok_env().tokenize("blahblahblahblahstopblah");
-    println!("tokens: {:?}", tokens);
-
     let mut matcher = Matcher::new(Ok(parser));
 
     // When try_consume_tokens only consumes part of the tokens before hitting the end of the grammar,
