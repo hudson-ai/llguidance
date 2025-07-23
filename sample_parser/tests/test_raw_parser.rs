@@ -284,3 +284,29 @@ fn test_lexer_inv_crash() {
         matcher.consume_token(t).unwrap();
     }
 }
+
+#[test]
+fn test_stop_when_try_consume_fails() {
+    let lark = r#"
+        start: "blah"* "stop"
+    "#;
+
+    let parser = make_parser(lark);
+    let tokens = get_tok_env().tokenize("blahblahblahblahstopblah");
+    println!("tokens: {:?}", tokens);
+
+    let mut matcher = Matcher::new(Ok(parser));
+
+    // When try_consume_tokens only consumes part of the tokens before hitting the end of the grammar,
+    // the parser should end up in a stopped state.
+    let consumed = matcher.try_consume_tokens(&tokens).unwrap();
+    assert!(consumed < tokens.len());
+    assert!(matcher.is_stopped());
+
+    // Likewise, if we consume exactly the right number of tokens,
+    // the parser should also end up in a stopped state.
+    matcher.reset().unwrap();
+    assert!(!matcher.is_stopped());
+    matcher.try_consume_tokens(&tokens[..consumed]).unwrap();
+    assert!(matcher.is_stopped());
+}
