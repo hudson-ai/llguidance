@@ -471,3 +471,33 @@ fn string_length_unsatisfiable() {
         "Unsatisfiable schema: minLength (2) is greater than maxLength (1)",
     );
 }
+
+#[test]
+fn test_multiple_of_zero() {
+    let schema = &json!({"type":"integer", "multipleOf": 0});
+    json_schema_check(schema, &json!(0), true);
+    json_schema_check(schema, &json!(1), false);
+    json_schema_check(schema, &json!(-1), false);
+}
+
+#[test]
+fn test_multiple_of_zero_float() {
+    let schema = &json!({"type":"number", "multipleOf": 0});
+    json_schema_check(schema, &json!(0.0), true);
+    json_schema_check(schema, &json!(1.0), false);
+    json_schema_check(schema, &json!(-1.0), false);
+}
+
+#[rstest]
+#[case::positive_multipleof(3)]
+#[case::negative_multipleof(-3)]
+fn test_multiple_of_negative_multipleof(#[case] mult: i32) {
+    let schema = &json!({"type":"integer", "multipleOf": mult});
+    json_schema_check(schema, &json!(0), true);
+    json_schema_check(schema, &json!(3), true);
+    json_schema_check(schema, &json!(6), true);
+    json_schema_check(schema, &json!(1), false);
+    json_schema_check(schema, &json!(-1), false);
+    json_schema_check(schema, &json!(-2), false);
+    json_schema_check(schema, &json!(-3), true);
+}
