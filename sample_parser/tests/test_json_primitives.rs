@@ -472,32 +472,39 @@ fn string_length_unsatisfiable() {
     );
 }
 
-#[test]
-fn test_multiple_of_zero() {
-    let schema = &json!({"type":"integer", "multipleOf": 0});
-    json_schema_check(schema, &json!(0), true);
-    json_schema_check(schema, &json!(1), false);
-    json_schema_check(schema, &json!(-1), false);
-}
-
-#[test]
-fn test_multiple_of_zero_float() {
-    let schema = &json!({"type":"number", "multipleOf": 0});
-    json_schema_check(schema, &json!(0.0), true);
-    json_schema_check(schema, &json!(1.0), false);
-    json_schema_check(schema, &json!(-1.0), false);
+#[rstest]
+#[case::zero(0.0)]
+#[case::negative(-1.0)]
+fn test_multiple_of_bad_value(#[case] value: f64) {
+    let schema = &json!({"type":"integer", "multipleOf": value});
+    json_err_test(
+        schema,
+        &format!("'multipleOf' must be a positive number, got {}", value),
+    );
 }
 
 #[rstest]
-#[case::positive_multipleof(3)]
-#[case::negative_multipleof(-3)]
-fn test_multiple_of_negative_multipleof(#[case] mult: i32) {
-    let schema = &json!({"type":"integer", "multipleOf": mult});
-    json_schema_check(schema, &json!(0), true);
-    json_schema_check(schema, &json!(3), true);
-    json_schema_check(schema, &json!(6), true);
-    json_schema_check(schema, &json!(1), false);
-    json_schema_check(schema, &json!(-1), false);
-    json_schema_check(schema, &json!(-2), false);
-    json_schema_check(schema, &json!(-3), true);
+#[case::zero(0, true)]
+#[case::one(1, false)]
+#[case::three(3, true)]
+#[case::six(6, true)]
+#[case::negative_one(-1, false)]
+#[case::negative_two(-2, false)]
+#[case::negative_three(-3, true)]
+fn test_multiple_of_int(#[case] value: i64, #[case] should_pass: bool) {
+    let schema = &json!({"type":"integer", "multipleOf": 3});
+    json_schema_check(schema, &json!(value), should_pass);
+}
+
+#[rstest]
+#[case(0.0, true)]
+#[case(0.3, true)]
+#[case(0.6, true)]
+#[case(1.0, false)]
+#[case(-1.0, false)]
+#[case(-1.2, true)]
+#[case(-0.3, true)]
+fn test_multiple_of_float(#[case] value: f64, #[case] should_pass: bool) {
+    let schema = &json!({"type":"number", "multipleOf": 0.3});
+    json_schema_check(schema, &json!(value), should_pass);
 }

@@ -293,14 +293,10 @@ impl Compiler {
         })?;
         let mut ast = RegexAst::Regex(rx);
         if let Some(d) = num.multiple_of.as_ref() {
-            let multiple_rx = if d.coef == 0 {
-                RegexAst::Literal("0".to_string())
-            } else {
-                RegexAst::Concat(vec![
-                    RegexAst::Regex("-?".to_string()),
-                    RegexAst::MultipleOf(d.coef, d.exp),
-                ])
-            };
+            let multiple_rx = RegexAst::Concat(vec![
+                RegexAst::Regex("-?".to_string()),
+                RegexAst::MultipleOf(d.coef, d.exp),
+            ]);
             ast = RegexAst::And(vec![ast, multiple_rx]);
         }
         Ok(ast)
@@ -322,14 +318,10 @@ impl Compiler {
             })?;
         let mut ast = RegexAst::Regex(rx);
         if let Some(d) = num.multiple_of.as_ref() {
-            let multiple_rx = if d.coef == 0 {
-                RegexAst::Literal("0".to_string())
-            } else {
-                RegexAst::Concat(vec![
-                    RegexAst::Regex("-?".to_string()),
-                    RegexAst::MultipleOf(d.coef, d.exp),
-                ])
-            };
+            let multiple_rx = RegexAst::Concat(vec![
+                RegexAst::Regex("-?".to_string()),
+                RegexAst::MultipleOf(d.coef, d.exp),
+            ]);
             ast = RegexAst::And(vec![ast, multiple_rx]);
         }
         Ok(ast)
