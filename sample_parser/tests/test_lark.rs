@@ -211,6 +211,22 @@ fn test_lark_syntax_general() {
         "#,
         "duplicate token",
     );
+    // Unterminated regex
+    lark_err_test(
+        r#"
+        start: / "test"
+        blah: "xyz"
+    "#,
+        "lexer error",
+    );
+    // Unterminated string
+    lark_err_test(
+        r#"
+        start: "test
+        blah: "xyz"
+    "#,
+        "lexer error",
+    );
 }
 
 #[test]
