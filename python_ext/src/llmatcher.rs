@@ -174,7 +174,7 @@ impl LLMatcher {
         if mask_ptr == 0 {
             return Err(PyValueError::new_err("Null pointer"));
         }
-        if mask_ptr % 4 != 0 {
+        if !mask_ptr.is_multiple_of(4) {
             return Err(PyValueError::new_err("Pointer not aligned"));
         }
         let n_words = self.tok_env.tok_trie().vocab_size().div_ceil(32);
@@ -446,7 +446,7 @@ impl LLMatcher {
         Ok(())
     }
 
-    fn compute_logit_bias(&mut self, py: Python<'_>) -> Cow<[u8]> {
+    fn compute_logit_bias(&mut self, py: Python<'_>) -> Cow<'_, [u8]> {
         py.allow_threads(|| {
             let m = self.compute_mask_or_eos();
             let mut res = vec![0u8; m.len()];
@@ -455,7 +455,7 @@ impl LLMatcher {
         })
     }
 
-    fn compute_bitmask(&mut self, py: Python<'_>) -> Cow<[u8]> {
+    fn compute_bitmask(&mut self, py: Python<'_>) -> Cow<'_, [u8]> {
         py.allow_threads(|| {
             let m = self.compute_mask_or_eos();
             Cow::Owned(bytemuck::cast_slice(m.as_slice()).to_vec())
@@ -486,7 +486,7 @@ impl LLMatcher {
         self.inner.compute_ff_tokens()
     }
 
-    fn compute_ff_bytes(&mut self) -> Cow<[u8]> {
+    fn compute_ff_bytes(&mut self) -> Cow<'_, [u8]> {
         let bytes = self.inner.compute_ff_bytes();
         Cow::Owned(bytes)
     }

@@ -1,16 +1,15 @@
 use std::fmt::Display;
 use std::{borrow::Cow, sync::Arc};
 
+use llguidance::api::TopLevelGrammar;
 use llguidance::api::{GrammarInit, ParserLimits};
 use llguidance::earley::SlicedBiasComputer;
 use llguidance::toktrie::{
     self, AnythingGoes, ApproximateTokEnv, InferenceCapabilities, TokEnv, TokRxInfo, TokTrie,
     TokenId, TokenizerEnv,
 };
-use llguidance::{api::TopLevelGrammar, output::ParserOutput};
 use llguidance::{HashMap, JsonCompileOptions, ParserFactory};
 use pyo3::{exceptions::PyValueError, prelude::*};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use toktrie_hf_tokenizers::ByteTokenizer;
 use toktrie_tiktoken::TikTokenBPE;
@@ -28,13 +27,6 @@ struct PyTokenizer {
 #[pyclass]
 pub(crate) struct LLTokenizer {
     factory: Arc<ParserFactory>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct PyMidProcessResult {
-    progress: Vec<ParserOutput>,
-    stop: bool,
-    temperature: f32,
 }
 
 #[pymethods]
@@ -195,7 +187,7 @@ impl LLTokenizer {
         self.tok_trie().decode_str(&tokens)
     }
 
-    fn decode_bytes(&self, tokens: Vec<u32>) -> Cow<[u8]> {
+    fn decode_bytes(&self, tokens: Vec<u32>) -> Cow<'_, [u8]> {
         let r = self.tok_trie().decode(&tokens);
         Cow::Owned(r)
     }
@@ -205,7 +197,7 @@ impl LLTokenizer {
         &self,
         new_bytes: &[u8],
         recent_tokens: Option<Vec<u32>>,
-    ) -> (Vec<u32>, Cow<[u8]>) {
+    ) -> (Vec<u32>, Cow<'_, [u8]>) {
         if new_bytes.is_empty() {
             return (Vec::new(), Cow::Borrowed(&[]));
         }
