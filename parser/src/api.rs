@@ -50,6 +50,8 @@ pub struct LLGuidanceOptions {
 
     /// If set, the grammar will allow the %ignore lexeme at the start of the grammar.
     /// Otherwise, it will only be allowed after the first non-ignored lexeme.
+    /// This option (like the other options here) will apply to the entire grammar,
+    /// including nested sub-grammars.
     #[serde(default)]
     pub allow_initial_skip: bool,
 }
