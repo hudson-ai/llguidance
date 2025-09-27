@@ -5,6 +5,7 @@ edition = "2021"
 license = "MIT"
 description = "Super-fast Structured Outputs"
 repository = "https://github.com/guidance-ai/llguidance"
+rust-version.workspace = true
 
 [dependencies]
 llguidance = { workspace = true }

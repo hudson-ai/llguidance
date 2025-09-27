@@ -34,7 +34,7 @@ impl LLInterpreter {
         if mask_ptr == 0 {
             return Err(PyValueError::new_err("Null pointer"));
         }
-        if mask_ptr % 4 != 0 {
+        if !mask_ptr.is_multiple_of(4) {
             return Err(PyValueError::new_err("Pointer not aligned"));
         }
         let n_words = self.inner.tok_trie().vocab_size().div_ceil(32);
@@ -148,7 +148,7 @@ impl LLInterpreter {
         Ok(self.json_py_result())
     }
 
-    fn compute_mask(&mut self, py: Python<'_>) -> PyResult<(Option<Cow<[u8]>>, String)> {
+    fn compute_mask(&mut self, py: Python<'_>) -> PyResult<(Option<Cow<'_, [u8]>>, String)> {
         let r = py
             .allow_threads(|| self.inner.compute_mask())
             .map_err(val_error)?
