@@ -329,3 +329,29 @@ fn test_try_consume_after_stop() {
     }
     unreachable!();
 }
+
+#[test]
+/// Test that try_consume_tokens accepts a consistent number of tokens whether
+/// 1. the EOS token is included in the input
+/// 2. the EOS token is not included, but is consumed separately afterwards
+///
+/// Note that this test is not opinionated about whether the EOS token is accepted
+/// in either case, just that the total number of tokens consumed is the same.
+fn test_try_consume_eos_consistency() {
+    let lark = r#"start: "a""#;
+    let parser = make_parser(lark);
+    let tokens = get_tok_env().tokenize("a");
+    let eos = get_tok_env().eos_token();
+    let tokens_with_eos = [tokens.as_slice(), &[eos]].concat();
+
+    let mut matcher = Matcher::new(Ok(parser));
+    let n_consumed_all = matcher.try_consume_tokens(&tokens_with_eos).unwrap();
+
+    matcher.reset().unwrap();
+
+    let n_consumed_no_eos = matcher.try_consume_tokens(&tokens).unwrap();
+    assert!(n_consumed_no_eos <= n_consumed_all);
+    let eos_consumed = matcher.try_consume_tokens(&[eos]).unwrap();
+    assert!(eos_consumed <= 1);
+    assert_eq!(n_consumed_no_eos + eos_consumed, n_consumed_all);
+}
