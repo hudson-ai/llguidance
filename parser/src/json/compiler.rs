@@ -20,29 +20,10 @@ use crate::{GrammarBuilder, NodeRef};
 // TODO: schemastore/src/schemas/json/BizTalkServerApplicationSchema.json - this breaks 1M fuel on lexer, why?!
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum Separator {
-    Literal(String),
-    Pattern { pattern: String },
-}
-
-impl Separator {
-    pub fn build(&self, builder: &mut GrammarBuilder) -> Result<NodeRef> {
-        match self {
-            Separator::Literal(s) => Ok(builder.string(s)),
-            Separator::Pattern { pattern: p } => {
-                let rx = builder.regex.regex(p)?;
-                Ok(builder.lexeme(rx))
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct JsonCompileOptions {
-    pub item_separator: Separator,
-    pub key_separator: Separator,
+    pub item_separator: String,
+    pub key_separator: String,
     pub whitespace_flexible: bool,
     pub whitespace_pattern: Option<String>,
     pub coerce_one_of: bool,
@@ -77,6 +58,8 @@ struct Compiler {
 
     any_cache: Option<NodeRef>,
     string_cache: Option<NodeRef>,
+    item_separator_cache: Option<NodeRef>,
+    key_separator_cache: Option<NodeRef>,
 }
 
 macro_rules! cache {
@@ -91,8 +74,8 @@ macro_rules! cache {
 impl Default for JsonCompileOptions {
     fn default() -> Self {
         Self {
-            item_separator: Separator::Literal(",".to_string()),
-            key_separator: Separator::Literal(":".to_string()),
+            item_separator: ",".to_string(),
+            key_separator: ":".to_string(),
             whitespace_pattern: None,
             whitespace_flexible: true,
             coerce_one_of: false,
@@ -155,6 +138,8 @@ impl Compiler {
             pending_definitions: vec![],
             any_cache: None,
             string_cache: None,
+            item_separator_cache: None,
+            key_separator_cache: None,
             pattern_cache: PatternPropertyCache::default(),
         }
     }
@@ -350,6 +335,26 @@ impl Compiler {
         })
     }
 
+    fn item_separator(&mut self) -> Result<NodeRef> {
+        if let Some(node) = self.item_separator_cache {
+            return Ok(node);
+        }
+        let rx = self.builder.regex.regex(&self.options.item_separator)?;
+        let node = self.builder.lexeme(rx);
+        self.item_separator_cache = Some(node);
+        Ok(node)
+    }
+
+    fn key_separator(&mut self) -> Result<NodeRef> {
+        if let Some(node) = self.key_separator_cache {
+            return Ok(node);
+        }
+        let rx = self.builder.regex.regex(&self.options.key_separator)?;
+        let node = self.builder.lexeme(rx);
+        self.key_separator_cache = Some(node);
+        Ok(node)
+    }
+
     fn get_definition(&mut self, reference: &str) -> Result<NodeRef> {
         if let Some(definition) = self.definitions.get(reference) {
             return Ok(*definition);
@@ -399,7 +404,7 @@ impl Compiler {
         let mut unquoted_taken_names: Vec<String> = vec![];
         let mut items: Vec<(NodeRef, bool)> = vec![];
 
-        let colon = self.options.key_separator.build(&mut self.builder)?;
+        let colon = self.key_separator()?;
 
         let mut num_required = 0;
         let mut num_optional = 0;
@@ -621,7 +626,7 @@ impl Compiler {
         if items.is_empty() {
             return Ok(self.builder.string(""));
         }
-        let comma = self.options.item_separator.build(&mut self.builder)?;
+        let comma = self.item_separator()?;
         let (item, required) = items[0];
         let rest = &items[1..];
 
@@ -666,14 +671,14 @@ impl Compiler {
     ) -> Result<NodeRef> {
         let min_elts = min_elts.saturating_sub(1);
         let max_elts = max_elts.map(|v| v.saturating_sub(1));
-        let comma = self.options.item_separator.build(&mut self.builder)?;
+        let comma = self.item_separator()?;
         let item_comma = self.builder.join(&[item, comma]);
         let item_comma_rep = self.builder.repeat(item_comma, min_elts, max_elts);
         Ok(self.builder.join(&[item_comma_rep, item]))
     }
 
     fn sequence(&mut self, item: NodeRef) -> Result<NodeRef> {
-        let comma = self.options.item_separator.build(&mut self.builder)?;
+        let comma = self.item_separator()?;
         let item_comma = self.builder.join(&[item, comma]);
         let item_comma_star = self.builder.zero_or_more(item_comma);
         Ok(self.builder.join(&[item_comma_star, item]))
@@ -888,7 +893,7 @@ impl Compiler {
         }
 
         let mut grammars: Vec<NodeRef> = vec![self.builder.string("[")];
-        let comma = self.options.item_separator.build(&mut self.builder)?;
+        let comma = self.item_separator()?;
 
         if !required_items.is_empty() {
             grammars.push(required_items[0]);
