@@ -27,12 +27,12 @@ pub enum Separator {
 }
 
 impl Separator {
-    pub fn build(&self, builder: &mut GrammarBuilder) -> NodeRef {
+    pub fn build(&self, builder: &mut GrammarBuilder) -> Result<NodeRef> {
         match self {
-            Separator::Literal(s) => builder.string(s),
+            Separator::Literal(s) => Ok(builder.string(s)),
             Separator::Pattern { pattern: p } => {
-                let rx = builder.regex.regex(p).unwrap();
-                builder.lexeme(rx)
+                let rx = builder.regex.regex(p)?;
+                Ok(builder.lexeme(rx))
             }
         }
     }
@@ -399,7 +399,7 @@ impl Compiler {
         let mut unquoted_taken_names: Vec<String> = vec![];
         let mut items: Vec<(NodeRef, bool)> = vec![];
 
-        let colon = self.options.key_separator.build(&mut self.builder);
+        let colon = self.options.key_separator.build(&mut self.builder)?;
 
         let mut num_required = 0;
         let mut num_optional = 0;
@@ -508,7 +508,7 @@ impl Compiler {
                 let sel_options = options
                     .iter()
                     .map(|v| self.object_fields(v))
-                    .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>>>()?;
                 return Ok(self.builder.select(&sel_options));
             }
 
@@ -587,7 +587,7 @@ impl Compiler {
         if !pattern_options.is_empty() && max_properties != Some(0) {
             let pattern = self.builder.select(&pattern_options);
             let required = min_properties > 0;
-            let seq = self.bounded_sequence(pattern, min_properties, max_properties);
+            let seq = self.bounded_sequence(pattern, min_properties, max_properties)?;
             items.push((seq, required));
         } else if min_properties > 0 {
             return Err(anyhow!(UnsatisfiableSchemaError {
@@ -597,14 +597,14 @@ impl Compiler {
             }));
         }
 
-        Ok(self.object_fields(&items))
+        self.object_fields(&items)
     }
 
-    fn object_fields(&mut self, items: &[(NodeRef, bool)]) -> NodeRef {
+    fn object_fields(&mut self, items: &[(NodeRef, bool)]) -> Result<NodeRef> {
         let opener = self.builder.string("{");
-        let inner = self.ordered_sequence(items, false, &mut HashMap::default());
+        let inner = self.ordered_sequence(items, false, &mut HashMap::default())?;
         let closer = self.builder.string("}");
-        self.builder.join(&[opener, inner, closer])
+        Ok(self.builder.join(&[opener, inner, closer]))
     }
 
     #[allow(clippy::type_complexity)]
@@ -613,22 +613,22 @@ impl Compiler {
         items: &'a [(NodeRef, bool)],
         prefixed: bool,
         cache: &mut HashMap<(&'a [(NodeRef, bool)], bool), NodeRef>,
-    ) -> NodeRef {
+    ) -> Result<NodeRef> {
         // Cache to reduce number of nodes from O(n^2) to O(n)
         if let Some(node) = cache.get(&(items, prefixed)) {
-            return *node;
+            return Ok(*node);
         }
         if items.is_empty() {
-            return self.builder.string("");
+            return Ok(self.builder.string(""));
         }
-        let comma = self.options.item_separator.build(&mut self.builder);
+        let comma = self.options.item_separator.build(&mut self.builder)?;
         let (item, required) = items[0];
         let rest = &items[1..];
 
         let node = match (prefixed, required) {
             (true, true) => {
                 // If we know we have preceeding elements, we can safely just add a (',' + e)
-                let rest_seq = self.ordered_sequence(rest, true, cache);
+                let rest_seq = self.ordered_sequence(rest, true, cache)?;
                 self.builder.join(&[comma, item, rest_seq])
             }
             (true, false) => {
@@ -636,26 +636,26 @@ impl Compiler {
                 // TODO optimization: if the rest is all optional, we can nest the rest in the optional
                 let comma_item = self.builder.join(&[comma, item]);
                 let optional_comma_item = self.builder.optional(comma_item);
-                let rest_seq = self.ordered_sequence(rest, true, cache);
+                let rest_seq = self.ordered_sequence(rest, true, cache)?;
                 self.builder.join(&[optional_comma_item, rest_seq])
             }
             (false, true) => {
                 // No preceding elements, so we just add the element (no comma)
-                let rest_seq = self.ordered_sequence(rest, true, cache);
+                let rest_seq = self.ordered_sequence(rest, true, cache)?;
                 self.builder.join(&[item, rest_seq])
             }
             (false, false) => {
                 // No preceding elements, but our element is optional. If we add the element, the remaining
                 // will be prefixed, else they are not.
                 // TODO: same nested optimization as above
-                let prefixed_rest = self.ordered_sequence(rest, true, cache);
-                let unprefixed_rest = self.ordered_sequence(rest, false, cache);
+                let prefixed_rest = self.ordered_sequence(rest, true, cache)?;
+                let unprefixed_rest = self.ordered_sequence(rest, false, cache)?;
                 let opts = [self.builder.join(&[item, prefixed_rest]), unprefixed_rest];
                 self.builder.select(&opts)
             }
         };
         cache.insert((items, prefixed), node);
-        node
+        Ok(node)
     }
 
     fn bounded_sequence(
@@ -663,20 +663,20 @@ impl Compiler {
         item: NodeRef,
         min_elts: usize,
         max_elts: Option<usize>,
-    ) -> NodeRef {
+    ) -> Result<NodeRef> {
         let min_elts = min_elts.saturating_sub(1);
         let max_elts = max_elts.map(|v| v.saturating_sub(1));
-        let comma = self.options.item_separator.build(&mut self.builder);
+        let comma = self.options.item_separator.build(&mut self.builder)?;
         let item_comma = self.builder.join(&[item, comma]);
         let item_comma_rep = self.builder.repeat(item_comma, min_elts, max_elts);
-        self.builder.join(&[item_comma_rep, item])
+        Ok(self.builder.join(&[item_comma_rep, item]))
     }
 
-    fn sequence(&mut self, item: NodeRef) -> NodeRef {
-        let comma = self.options.item_separator.build(&mut self.builder);
+    fn sequence(&mut self, item: NodeRef) -> Result<NodeRef> {
+        let comma = self.options.item_separator.build(&mut self.builder)?;
         let item_comma = self.builder.join(&[item, comma]);
         let item_comma_star = self.builder.zero_or_more(item_comma);
-        self.builder.join(&[item_comma_star, item])
+        Ok(self.builder.join(&[item_comma_star, item]))
     }
 
     fn json_quote(&self, ast: RegexAst) -> RegexAst {
@@ -883,12 +883,12 @@ impl Compiler {
         if max_items.is_none() {
             if let Some(additional_item) = additional_item_grm {
                 // Add an infinite tail of items
-                optional_items.push(self.sequence(additional_item));
+                optional_items.push(self.sequence(additional_item)?);
             }
         }
 
         let mut grammars: Vec<NodeRef> = vec![self.builder.string("[")];
-        let comma = self.options.item_separator.build(&mut self.builder);
+        let comma = self.options.item_separator.build(&mut self.builder)?;
 
         if !required_items.is_empty() {
             grammars.push(required_items[0]);
