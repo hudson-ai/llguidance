@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Dates are d
 
 If a release doesn't introduce any interesting changes (build fixes etc.), it's skipped.
 
+#### [v1.3.0](https://github.com/guidance-ai/llguidance/compare/v1.2.0...v1.3.0) 2025-10-20
+
+- change semantics of JSON separators (now regex patterns instead of text literals) [`#246`](https://github.com/guidance-ai/llguidance/pull/246)
+- fix Inconsistent handling of the EOS token in `try_consume_tokens` [`#244`](https://github.com/guidance-ai/llguidance/pull/244)
+- add option for initial skip of `%ignore` lexeme [`#235`](https://github.com/guidance-ai/llguidance/pull/235)
+- bump MSRV to 1.87.0 [`#243`](https://github.com/guidance-ai/llguidance/pull/243)
+
 #### [v1.2.0](https://github.com/guidance-ai/llguidance/compare/v1.1.2...v1.2.0) 2025-08-12
 
 - support multithreaded compute bitmask for speculative decoding [`#225`](https://github.com/guidance-ai/llguidance/pull/225)
