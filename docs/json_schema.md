@@ -76,8 +76,8 @@ You can modify your grammar easily to allow initial or trailing whitespace.
 You can set top-level `"x-guidance"` key to control this.
 Following keys are available inside of it:
 
-- `item_separator`, defaults to `":"`
-- `key_separator`, defaults to `","`
+- `item_separator`, defaults to `","` - a regex pattern for the separator between array items or object properties
+- `key_separator`, defaults to `":"` - a regex pattern for the separator between object keys and values
 - `whitespace_flexible`, defaults to `true`; set to `false` to enforce compact JSON representation
 - `whitespace_pattern`, optional string, overrides `whitespace_flexible`;
   `whitespace_flexible: true` is equivalent to `whitespace_pattern: r"[\x20\x0A\x0D\x09]+"`
@@ -99,6 +99,26 @@ For example:
    }
 }
 ```
+
+The separators are treated as regex patterns, allowing for flexible formatting:
+
+```json
+{
+   "x-guidance": {
+      "item_separator": "\\s{0,2},\\s{0,2}",
+      "key_separator": "\\s{0,2}:\\s{0,2}",
+      "whitespace_flexible": false
+   },
+   "type": "object",
+   "properties": {
+      "a": { "type": "number" },
+      "b": { "type": "number" }
+   }
+}
+```
+
+This will match JSON like `{"a":1,"b":2}`, `{"a": 1, "b": 2}`, or `{"a"  :  1 , "b":2}`,
+but not `{"a":1,   "b":2}` (too much whitespace after comma).
 
 The `"x-guidance"` key is only recognized at the top level of the schema.
 
