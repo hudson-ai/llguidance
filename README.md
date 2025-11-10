@@ -99,7 +99,7 @@ Thus, with 16 cores and a 10ms forward pass, llguidance can handle batch sizes u
 
 ## Building
 
-- [install rust](https://www.rust-lang.org/tools/install); 1.75 or later
+- [install rust](https://www.rust-lang.org/tools/install); 1.87 or later
 
 If you just need the C or Rust library (`llguidance`), 
 check the [parser](./parser/README.md) directory.
