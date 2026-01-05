@@ -365,3 +365,35 @@ fn whitespace_flexible_many_formats(
     );
     lark_str_test(&lark, true, &target_str, true);
 }
+
+#[rstest]
+#[case::with_spaces(r#"{"a": 1, "b": 2}"#, true)]
+#[case::no_spaces(r#"{"a":1,"b":2}"#, true)]
+#[case::two_spaces_around_colon(r#"{"a"  :  1 , "b":2}"#, true)]
+#[case::two_spaces_around_both_colons(r#"{"a"  :  1 , "b"  :  2}"#, true)]
+#[case::spaces_before_comma(r#"{"a":1 ,  "b":2}"#, true)]
+#[case::spaces_before_comma_2(r#"{"a": 1 , "b": 2}"#, true)]
+#[case::two_spaces_after_colon(r#"{"a":1,"b":  2}"#, true)]
+#[case::three_spaces_after_comma(r#"{"a":1,   "b":2}"#, false)]
+#[case::four_spaces_after_colon(r#"{"a":1,"b":    2}"#, false)]
+#[case::multi_line("{\n\"a\"\n:\n1,\n\"b\"\n:\n2\n}", true)]
+#[case::multi_line_2("{\n\"a\"\n: \n1, \n\"b\"\n: \n2\n}", true)]
+#[case::pretty_print("{\n  \"a\":\n 1,\n  \"b\":\n 2\n}", false)]
+#[case::pretty_print_2("{\n  \"a\": 1,\n  \"b\": 2\n}", false)]
+#[case::pretty_print_3("{\n  \"a\": 1, \n  \"b\": 2\n}", false)]
+#[case::pretty_print_extra_spaces("{\n  \"a\" : 1 , \n  \"b\" : 2\n}", false)]
+fn test_whitespace_pattern(#[case] input: &str, #[case] should_succeed: bool) {
+    let options = json!({
+        "item_separator": r",",
+        "key_separator": r":",
+        "whitespace_pattern": r"[\x20\x0A\x0D\x09]{0, 2}",
+    });
+    let lark = format!(
+        r#"
+        start: %json {{
+            "x-guidance": {options}
+        }}
+    "#
+    );
+    lark_str_test(&lark, should_succeed, input, true);
+}
