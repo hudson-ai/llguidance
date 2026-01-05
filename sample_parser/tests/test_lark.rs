@@ -1741,7 +1741,7 @@ fn test_parametric_long() {
 fn test_skip(#[case] input: &str) {
     lark_str_test(
         r#"start: "A" "!"
-           %ignore /[ \t]+/"#,
+           %ignore /[ \t]/"#,
         true,
         input,
         true,
@@ -1757,7 +1757,7 @@ fn test_skip(#[case] input: &str) {
 fn test_skip_once(#[case] input: &str, #[case] should_pass: bool) {
     lark_str_test(
         r#"start: "A" "!"
-           %ignore_once /[ \t]+/"#,
+           %ignore_once /[ \t]/"#,
         should_pass,
         input,
         true,
