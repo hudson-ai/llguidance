@@ -18,7 +18,7 @@ pub struct LexerSpec {
     pub allow_initial_skip: bool,
     pub num_extra_lexemes: usize,
     pub skip_by_class: Vec<LexemeIdx>,
-    class_by_skip: HashMap<ExprRef, LexemeClass>,
+    class_by_skip: HashMap<(ExprRef, bool), LexemeClass>,
     pub current_class: LexemeClass,
     // regex for \xFF \[ [0-9]+ \]
     pub special_token_rx: Option<ExprRef>,
@@ -189,7 +189,7 @@ impl LexerSpec {
         let skip_node = self.regex_builder.mk(&skip)?; // validate first
 
         if !self.has_max_tokens && !self.has_temperature {
-            if let Some(&cls) = self.class_by_skip.get(&skip_node) {
+            if let Some(&cls) = self.class_by_skip.get(&(skip_node, skip_once)) {
                 // re-use existing
                 self.current_class = cls;
                 return Ok(cls);
@@ -197,7 +197,7 @@ impl LexerSpec {
         }
 
         self.current_class = LexemeClass::new(self.skip_by_class.len());
-        self.class_by_skip.insert(skip_node, self.current_class);
+        self.class_by_skip.insert((skip_node, skip_once), self.current_class);
         self.skip_by_class.push(LexemeIdx(0)); // avoid assert in empty_spec()
         let idx = self
             .add_lexeme_spec(LexemeSpec {

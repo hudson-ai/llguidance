@@ -1764,3 +1764,45 @@ fn test_skip_once(#[case] input: &str, #[case] should_pass: bool) {
         true,
     );
 }
+
+#[rstest]
+#[case("A!")]
+#[case("A !")]
+#[case("A\t!")]
+#[case("A  !")]
+#[case("A\t \t \t!")]
+fn test_skip_nested(#[case] input: &str) {
+    lark_str_test(
+        r#"%llguidance {"skip_once": true}
+           start: %lark{
+              %llguidance {"skip_once": false}
+              start: "A" "!"
+              %ignore /[ \t]/
+            }
+          %ignore /[ \t]/"#,
+        true,
+        input,
+        true,
+    );
+}
+
+#[rstest]
+#[case("A!", true)]
+#[case("A !", true)]
+#[case("A\t!", true)]
+#[case("A  !", false)]
+#[case("A\t \t \t!", false)]
+fn test_skip_once_nested(#[case] input: &str, #[case] should_pass: bool) {
+    lark_str_test(
+        r#"%llguidance {"skip_once": false}
+           start: %lark{
+              %llguidance {"skip_once": true}
+              start: "A" "!"
+              %ignore /[ \t]/
+            }
+          %ignore /[ \t]/"#,
+        should_pass,
+        input,
+        true,
+    );
+}
