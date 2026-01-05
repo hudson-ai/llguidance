@@ -1831,7 +1831,16 @@ impl ParserState {
             }
         }
 
-        let push_res = self.just_push_row(grammar_id, lex_start, is_skip_once);
+        // If this is a skip_once lexeme, recompute the lexer state without skip
+        if is_skip_once && lex_start.is_some() {
+            let prev_state = lex_start.unwrap();
+            let mut allowed = self.shared_box.lexer().possible_lexemes(prev_state).clone();
+            let skip_lexeme = self.lexer_spec().skip_id(grammar_id);
+            allowed.remove(skip_lexeme);
+            lex_start = Some(self.shared_box.lexer_mut().limit_state_to(prev_state, &allowed));
+        }
+
+        let push_res = self.just_push_row(grammar_id, lex_start, false);
         assert!(push_res);
 
         true

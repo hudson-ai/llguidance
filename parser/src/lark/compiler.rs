@@ -36,7 +36,6 @@ struct Grammar {
     rules: HashMap<String, Rule>,
     tokens: HashMap<String, TokenDef>,
     ignore: Vec<Expansions>,
-    ignore_once: Vec<Expansions>,
     llguidance_options: serde_json::Value,
 }
 
@@ -46,7 +45,6 @@ impl Default for Grammar {
             rules: HashMap::default(),
             tokens: HashMap::default(),
             ignore: vec![],
-            ignore_once: vec![],
             llguidance_options: serde_json::Value::Object(serde_json::Map::new()),
         }
     }
@@ -634,23 +632,18 @@ impl Compiler {
             start_name
         );
         let ignore = std::mem::take(&mut grm.ignore);
-        let ignore_once = std::mem::take(&mut grm.ignore_once);
-        let has_ignore_once = !ignore_once.is_empty();
         self.grammar = grm;
 
         let opts: LLGuidanceOptions =
             serde_json::from_value(self.grammar.llguidance_options.clone())
                 .map_err(|e| anyhow!("failed to parse %llguidance declaration: {}", e))?;
 
-        // Combine all ignore patterns (both regular and once)
         let all_ignore = ignore
             .into_iter()
-            .chain(ignore_once.into_iter())
             .map(|exp| Ok(RegexAst::ExprRef(self.do_token_expansions(exp)?)))
             .collect::<Result<Vec<_>>>()?;
 
-        // If there are any ignore_once patterns, use skip_once=true for all
-        let id = self.builder.add_grammar(opts, RegexAst::Or(all_ignore), has_ignore_once)?;
+        let id = self.builder.add_grammar(opts, RegexAst::Or(all_ignore))?;
 
         let start = self.do_rule(start_name, None)?;
         self.builder.set_start_node(start);
@@ -704,9 +697,6 @@ impl Grammar {
         match statement {
             Statement::Ignore(exp) => {
                 self.ignore.push(exp);
-            }
-            Statement::IgnoreOnce(exp) => {
-                self.ignore_once.push(exp);
             }
             Statement::Import { path, alias } => {
                 let regex = lookup_common_regex(&path)?;

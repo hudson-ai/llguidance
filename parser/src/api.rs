@@ -54,6 +54,12 @@ pub struct LLGuidanceOptions {
     /// including nested sub-grammars.
     #[serde(default)]
     pub allow_initial_skip: bool,
+
+    /// If set, %ignore patterns will only match once (instead of multiple times).
+    /// Unlike other options, this is NOT inherited by nested grammars - the lowest
+    /// nested grammar has control and its setting is not overridden by parents.
+    #[serde(default)]
+    pub skip_once: bool,
 }
 
 impl LLGuidanceOptions {

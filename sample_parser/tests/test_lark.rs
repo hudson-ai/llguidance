@@ -1756,8 +1756,9 @@ fn test_skip(#[case] input: &str) {
 #[case("A\t \t \t!", false)]
 fn test_skip_once(#[case] input: &str, #[case] should_pass: bool) {
     lark_str_test(
-        r#"start: "A" "!"
-           %ignore_once /[ \t]/"#,
+        r#"%llguidance {"skip_once": true}
+           start: "A" "!"
+           %ignore /[ \t]/"#,
         should_pass,
         input,
         true,
