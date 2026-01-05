@@ -1756,9 +1756,8 @@ fn test_skip(#[case] input: &str) {
 #[case("A\t \t \t!", false)]
 fn test_skip_once(#[case] input: &str, #[case] should_pass: bool) {
     lark_str_test(
-        r#"%llguidance {"skip_once": true}
-           start: "A" "!"
-           %ignore /[ \t]/"#,
+        r#"start: "A" "!"
+           %ignore_once /[ \t]/"#,
         should_pass,
         input,
         true,
@@ -1773,13 +1772,11 @@ fn test_skip_once(#[case] input: &str, #[case] should_pass: bool) {
 #[case("A\t \t \t!")]
 fn test_skip_nested(#[case] input: &str) {
     lark_str_test(
-        r#"%llguidance {"skip_once": true}
-           start: %lark{
-              %llguidance {"skip_once": false}
+        r#"start: %lark{
               start: "A" "!"
               %ignore /[ \t]/
             }
-          %ignore /[ \t]/"#,
+           %ignore_once /[ \t]/"#,
         true,
         input,
         true,
@@ -1794,11 +1791,9 @@ fn test_skip_nested(#[case] input: &str) {
 #[case("A\t \t \t!", false)]
 fn test_skip_once_nested(#[case] input: &str, #[case] should_pass: bool) {
     lark_str_test(
-        r#"%llguidance {"skip_once": false}
-           start: %lark{
-              %llguidance {"skip_once": true}
+        r#"start: %lark{
               start: "A" "!"
-              %ignore /[ \t]/
+              %ignore_once /[ \t]/
             }
           %ignore /[ \t]/"#,
         should_pass,

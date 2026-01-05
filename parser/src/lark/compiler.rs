@@ -36,6 +36,7 @@ struct Grammar {
     rules: HashMap<String, Rule>,
     tokens: HashMap<String, TokenDef>,
     ignore: Vec<Expansions>,
+    ignore_once: Vec<Expansions>,
     llguidance_options: serde_json::Value,
 }
 
@@ -45,6 +46,7 @@ impl Default for Grammar {
             rules: HashMap::default(),
             tokens: HashMap::default(),
             ignore: vec![],
+            ignore_once: vec![],
             llguidance_options: serde_json::Value::Object(serde_json::Map::new()),
         }
     }
@@ -632,16 +634,29 @@ impl Compiler {
             start_name
         );
         let ignore = std::mem::take(&mut grm.ignore);
+        let ignore_once = std::mem::take(&mut grm.ignore_once);
         self.grammar = grm;
 
-        let opts: LLGuidanceOptions =
+        let mut opts: LLGuidanceOptions =
             serde_json::from_value(self.grammar.llguidance_options.clone())
                 .map_err(|e| anyhow!("failed to parse %llguidance declaration: {}", e))?;
 
-        let all_ignore = ignore
+        // Collect regular ignore patterns
+        let mut all_ignore = ignore
             .into_iter()
             .map(|exp| Ok(RegexAst::ExprRef(self.do_token_expansions(exp)?)))
             .collect::<Result<Vec<_>>>()?;
+
+        // Collect ignore_once patterns and set skip_once flag if any exist
+        let ignore_once_patterns = ignore_once
+            .into_iter()
+            .map(|exp| Ok(RegexAst::ExprRef(self.do_token_expansions(exp)?)))
+            .collect::<Result<Vec<_>>>()?;
+
+        if !ignore_once_patterns.is_empty() {
+            opts.skip_once = true;
+            all_ignore.extend(ignore_once_patterns);
+        }
 
         let id = self.builder.add_grammar(opts, RegexAst::Or(all_ignore))?;
 
@@ -697,6 +712,9 @@ impl Grammar {
         match statement {
             Statement::Ignore(exp) => {
                 self.ignore.push(exp);
+            }
+            Statement::IgnoreOnce(exp) => {
+                self.ignore_once.push(exp);
             }
             Statement::Import { path, alias } => {
                 let regex = lookup_common_regex(&path)?;

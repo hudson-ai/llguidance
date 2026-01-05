@@ -23,6 +23,7 @@ use crate::{
 #[allow(clippy::upper_case_acronyms)]
 pub enum Token {
     KwIgnore,
+    KwIgnoreOnce,
     KwImport,
     KwOverride,
     KwDeclare,
@@ -190,6 +191,7 @@ impl Token {
         (Token::KwDeclare, "%declare"),
         (Token::KwLLGuidance, "%llguidance"),
         (Token::KwIgnore, "%ignore"),
+        (Token::KwIgnoreOnce, "%ignore_once"),
         (Token::KwImport, "%import"),
         (Token::KwOverride, "%override"),
         (Token::KwJson, "%json"),
