@@ -58,6 +58,7 @@ pub struct TokenDef {
 #[derive(Debug)]
 pub enum Statement {
     Ignore(Expansions),
+    IgnoreOnce(Expansions),
     Import {
         path: String,
         alias: Option<String>,

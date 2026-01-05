@@ -212,10 +212,10 @@ impl GrammarBuilder {
         warnings
     }
 
-    pub fn add_grammar(&mut self, options: LLGuidanceOptions, skip: RegexAst) -> Result<SymIdx> {
+    pub fn add_grammar(&mut self, options: LLGuidanceOptions, skip: RegexAst, skip_once: bool) -> Result<SymIdx> {
         self.check_limits()?;
 
-        self.curr_lexeme_class = self.regex.spec.setup_lexeme_class(skip)?;
+        self.curr_lexeme_class = self.regex.spec.setup_lexeme_class(skip, skip_once)?;
 
         self.strings.clear();
         self.at_most_cache.clear();

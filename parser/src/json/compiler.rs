@@ -154,7 +154,7 @@ impl Compiler {
         };
         let id = self
             .builder
-            .add_grammar(LLGuidanceOptions::default(), skip)?;
+            .add_grammar(LLGuidanceOptions::default(), skip, false)?;
 
         let built = build_schema(schema, &self.options)?;
         self.pattern_cache = built.pattern_cache;

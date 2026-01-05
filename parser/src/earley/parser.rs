@@ -1820,7 +1820,18 @@ impl ParserState {
             lex_start = None;
         }
 
-        let push_res = self.just_push_row(grammar_id, lex_start);
+        // For skip_once lexemes, we need to recompute the lexer state without the skip lexeme
+        let set = self.shared_box.lexer().lexemes_from_idx(lexeme.idx);
+        let lex_spec = self.lexer_spec();
+        let mut is_skip_once = false;
+        for lx in set.as_slice() {
+            if lex_spec.lexeme_spec(*lx).skip_once {
+                is_skip_once = true;
+                break;
+            }
+        }
+
+        let push_res = self.just_push_row(grammar_id, lex_start, is_skip_once);
         assert!(push_res);
 
         true
@@ -2070,7 +2081,12 @@ impl ParserState {
     }
 
     #[inline(always)]
-    fn just_push_row(&mut self, grammar_id: LexemeClass, lex_start: Option<StateID>) -> bool {
+    fn just_push_row(
+        &mut self,
+        grammar_id: LexemeClass,
+        lex_start: Option<StateID>,
+        exclude_skip: bool,
+    ) -> bool {
         let row_len = self.scratch.row_len();
 
         self.stats.rows += 1;
@@ -2084,10 +2100,12 @@ impl ParserState {
                 l
             } else {
                 // accept a SKIP lexeme, if the grammar didn't finish
-                if self
-                    .scratch
-                    .push_allowed_grammar_ids
-                    .get(grammar_id.as_usize())
+                // (unless exclude_skip is true for skip_once lexemes)
+                if !exclude_skip
+                    && self
+                        .scratch
+                        .push_allowed_grammar_ids
+                        .get(grammar_id.as_usize())
                 {
                     let skip = self.lexer_spec().skip_id(grammar_id);
                     self.scratch.push_allowed_lexemes.add(skip);
@@ -2100,7 +2118,8 @@ impl ParserState {
 
             debug_def!(
                 self,
-                "  push row: {} {:?}",
+                "  push row{}: {} {:?}",
+                if exclude_skip { " (skip_once)" } else { "" },
                 self.allowed_lexemes_dbg(lex_start),
                 grammar_id
             );
@@ -2181,7 +2200,7 @@ impl ParserState {
             self.process_max_tokens(ptr, lexeme);
         }
 
-        self.just_push_row(grammar_id, None)
+        self.just_push_row(grammar_id, None, false)
     }
 
     fn mk_grammar_stack_node(&self, sym_data: &CSymbol, curr_idx: usize) -> GrammarStackNode {

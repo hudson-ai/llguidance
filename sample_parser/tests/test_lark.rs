@@ -1,4 +1,5 @@
 use llguidance::{earley::XorShift, substring::chunk_into_words};
+use rstest::rstest;
 use serde_json::json;
 
 mod common_lark_utils;
@@ -1728,5 +1729,37 @@ fn test_parametric_long() {
         ),
         &[&s],
         &[&s2],
+    );
+}
+
+#[rstest]
+#[case("A!")]
+#[case("A !")]
+#[case("A\t!")]
+#[case("A  !")]
+#[case("A\t \t \t!")]
+fn test_skip(#[case] input: &str) {
+    lark_str_test(
+        r#"start: "A" "!"
+           %ignore /[ \t]+/"#,
+        true,
+        input,
+        true,
+    );
+}
+
+#[rstest]
+#[case("A!", true)]
+#[case("A !", true)]
+#[case("A\t!", true)]
+#[case("A  !", false)]
+#[case("A\t \t \t!", false)]
+fn test_skip_once(#[case] input: &str, #[case] should_pass: bool) {
+    lark_str_test(
+        r#"start: "A" "!"
+           %ignore_once /[ \t]+/"#,
+        should_pass,
+        input,
+        true,
     );
 }

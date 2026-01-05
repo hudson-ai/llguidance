@@ -23,6 +23,7 @@ use crate::{
 #[allow(clippy::upper_case_acronyms)]
 pub enum Token {
     KwIgnore,
+    KwIgnoreOnce,
     KwImport,
     KwOverride,
     KwDeclare,
@@ -190,6 +191,7 @@ impl Token {
         (Token::KwDeclare, "%declare"),
         (Token::KwLLGuidance, "%llguidance"),
         (Token::KwIgnore, "%ignore"),
+        (Token::KwIgnoreOnce, "%ignore_once"),
         (Token::KwImport, "%import"),
         (Token::KwOverride, "%override"),
         (Token::KwJson, "%json"),
@@ -233,7 +235,7 @@ pub fn lex_lark(input: &str) -> Result<Vec<Lexeme>> {
     let comment_or_ws = r"((#|//)[^\n]*)|[ \t]+".to_string();
     let mut spec = LexerSpec::new().unwrap();
     let cls = spec
-        .setup_lexeme_class(RegexAst::Regex(comment_or_ws))
+        .setup_lexeme_class(RegexAst::Regex(comment_or_ws), false)
         .unwrap();
     let mut lexeme_idx_to_token = HashMap::default();
     lexeme_idx_to_token.insert(spec.skip_id(cls), Token::SKIP);

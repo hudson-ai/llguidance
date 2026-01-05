@@ -57,6 +57,7 @@ pub struct LexemeSpec {
     pub(crate) is_extra: bool,
     pub(crate) is_suffix: bool,
     pub(crate) is_skip: bool,
+    pub(crate) skip_once: bool,
     json_options: Option<JsonQuoteOptions>,
     pub(crate) token_ranges: Vec<RangeInclusive<TokenId>>,
 }
@@ -184,7 +185,7 @@ impl LexerSpec {
             .has_simply_forced_bytes(lex_spec.compiled_rx, bytes)
     }
 
-    pub fn setup_lexeme_class(&mut self, skip: RegexAst) -> Result<LexemeClass> {
+    pub fn setup_lexeme_class(&mut self, skip: RegexAst, skip_once: bool) -> Result<LexemeClass> {
         let skip_node = self.regex_builder.mk(&skip)?; // validate first
 
         if !self.has_max_tokens && !self.has_temperature {
@@ -203,6 +204,7 @@ impl LexerSpec {
                 name: format!("SKIP{}", self.current_class.as_usize()),
                 rx: skip,
                 is_skip: true,
+                skip_once,
                 ..self.empty_spec()
             })
             .expect("already validated");
@@ -326,6 +328,7 @@ impl LexerSpec {
                 && lex.max_tokens == spec.max_tokens
                 && lex.token_ranges == spec.token_ranges
                 && lex.is_extra == spec.is_extra
+                && lex.skip_once == spec.skip_once
         }) {
             return Ok(LexemeIdx::new(idx));
         }
@@ -355,6 +358,7 @@ impl LexerSpec {
             contextual: false,
             ends_at_eos: false,
             is_skip: false,
+            skip_once: false,
             is_suffix: false,
             is_extra: false,
             json_options: None,
