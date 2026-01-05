@@ -261,9 +261,6 @@ impl Parser {
         if self.match_token(Token::KwIgnore) {
             let expansions = self.parse_expansions()?;
             Ok(Statement::Ignore(expansions))
-        } else if self.match_token(Token::KwIgnoreOnce) {
-            let expansions = self.parse_expansions()?;
-            Ok(Statement::IgnoreOnce(expansions))
         } else if self.match_token(Token::KwImport) {
             let import_path = self.parse_import_path()?;
             if self.match_token(Token::Arrow) {
