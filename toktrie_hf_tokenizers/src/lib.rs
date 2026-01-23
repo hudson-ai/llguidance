@@ -366,70 +366,124 @@ mod tests {
         );
     }
 
-    #[test]
-    fn metaspace_prepend_scheme_fixed() {
-        // Test that Metaspace pre-tokenizer with prepend_scheme: First doesn't add unwanted spaces
-        // Using a simple vocab with regular tokens and space-prefixed variants
-        const METASPACE_TOKENIZER_JSON: &str = r#"{
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::metaspace_always_top_level(
+        r#"null"#,
+        r#"{
+            "type": "Metaspace",
+            "replacement": "▁",
+            "prepend_scheme": "always",
+            "split": false
+        }"#
+    )]
+    #[case::metaspace_always_nested_in_sequence(
+        r#"null"#,
+        r#"{
+            "type": "Sequence",
+            "pretokenizers": [
+                {
+                    "type": "Metaspace",
+                    "replacement": "▁",
+                    "prepend_scheme": "always",
+                    "split": false
+                }
+            ]
+        }"#
+    )]
+    #[case::metaspace_first_top_level(
+        r#"null"#,
+        r#"{
+            "type": "Metaspace",
+            "replacement": "▁",
+            "prepend_scheme": "first",
+            "split": false
+        }"#
+    )]
+    #[case::metaspace_first_nested_in_sequence(
+        r#"null"#,
+        r#"{
+            "type": "Sequence",
+            "pretokenizers": [
+                {
+                    "type": "Metaspace",
+                    "replacement": "▁",
+                    "prepend_scheme": "first",
+                    "split": false
+                }
+            ]
+        }"#
+    )]
+    #[case::prepend_normalizer_top_level(
+        r#"{
+            "type": "Prepend",
+            "prepend": "▁"
+        }"#,
+        r#"null"#
+    )]
+    #[case::prepend_normalizer_nested_in_sequence(
+        r#"{
+            "type": "Sequence",
+            "normalizers": [
+                {
+                    "type": "Prepend",
+                    "prepend": "▁"
+                }
+            ]
+        }"#,
+        r#"null"#
+    )]
+    fn test_tokenizer_fixes(#[case] normalizer: &str, #[case] pre_tokenizer: &str) {
+        let tokenizer_json = format!(
+            r#"{{
             "version": "1.0",
             "truncation": null,
             "padding": null,
             "added_tokens": [],
-            "normalizer": null,
-            "pre_tokenizer": {
-                "type": "Metaspace",
-                "replacement": "▁",
-                "prepend_scheme": "always",
-                "split": false
-            },
+            "normalizer": {normalizer},
+            "pre_tokenizer": {pre_tokenizer},
             "post_processor": null,
-            "decoder": {
+            "decoder": {{
                 "type": "ByteLevel",
                 "add_prefix_space": false,
                 "trim_offsets": true
-            },
-            "model": {
+            }},
+            "model": {{
                 "type": "BPE",
                 "dropout": null,
                 "unk_token": null,
                 "continuing_subword_prefix": "",
                 "end_of_word_suffix": "",
                 "fuse_unk": false,
-                "vocab": {
+                "vocab": {{
                     "▁a": 0,
                     "▁>": 1,
                     "a": 2,
                     ">": 3,
                     "▁": 4
-                },
+                }},
                 "merges": [
                     "▁ a",
                     "▁ >"
                 ]
-            }
-        }"#;
-
-        let hf_tokenizer = Tokenizer::from_str(METASPACE_TOKENIZER_JSON).unwrap();
-
-        // Before fix: tokenizer would add a leading ▁ (which represents space)
-        let before_encoded = hf_tokenizer.encode("a>", false).unwrap();
-        let before_encoded_ids = before_encoded.get_ids();
-        assert!(
-            before_encoded_ids == vec![0, 3],
-            "Before fix: expected tokens [▁a, >], got ids: {:?}",
-            before_encoded_ids
+            }}
+        }}"#
         );
 
-        // Now create ByteTokenizer which should fix the prepend_scheme
+        let hf_tokenizer = Tokenizer::from_str(&tokenizer_json).unwrap();
+
+        // Before fix: tokenizer would add unwanted ▁ prefix
+        let before_encoded = hf_tokenizer.encode("a>", false).unwrap();
+        let before_ids = before_encoded.get_ids();
+        assert_eq!(before_ids, vec![0, 3], "Before fix: expected [▁a, >]");
+
+        // Create ByteTokenizer which should apply the fixes
         let tokenizer = ByteTokenizer::from_tokenizer(hf_tokenizer).unwrap();
 
-        // After fix: tokenizer should NOT add a leading ▁
+        // After fix: tokenizer should NOT add unwanted prefixes
         let after_encoded = tokenizer.hf_tokenizer.encode("a>", false).unwrap();
-        let after_encoded_ids = after_encoded.get_ids();
-        assert!(
-            after_encoded_ids == vec![2, 3],
-            "After fix: expected tokens [a, >], got ids: {:?}",
-            after_encoded_ids
-        );
+        let after_ids = after_encoded.get_ids();
+        assert_eq!(after_ids, vec![2, 3], "After fix: expected [a, >]");
     }
 }
