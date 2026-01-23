@@ -330,4 +330,71 @@ mod tests {
             vec![special_id]
         );
     }
+
+    #[test]
+    fn metaspace_prepend_scheme_fixed() {
+        // Test that Metaspace pre-tokenizer with prepend_scheme: First doesn't add unwanted spaces
+        // Using a simple vocab with regular tokens and space-prefixed variants
+        const METASPACE_TOKENIZER_JSON: &str = r#"{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": {
+                "type": "Metaspace",
+                "replacement": "▁",
+                "prepend_scheme": "always",
+                "split": false
+            },
+            "post_processor": null,
+            "decoder": {
+                "type": "ByteLevel",
+                "add_prefix_space": false,
+                "trim_offsets": true
+            },
+            "model": {
+                "type": "BPE",
+                "dropout": null,
+                "unk_token": null,
+                "continuing_subword_prefix": "",
+                "end_of_word_suffix": "",
+                "fuse_unk": false,
+                "vocab": {
+                    "▁a": 0,
+                    "▁>": 1,
+                    "a": 2,
+                    ">": 3,
+                    "▁": 4
+                },
+                "merges": [
+                    "▁ a",
+                    "▁ >"
+                ]
+            }
+        }"#;
+
+        let hf_tokenizer = Tokenizer::from_str(METASPACE_TOKENIZER_JSON).unwrap();
+
+        // Before fix: tokenizer would add a leading ▁ (which represents space)
+        let before_encoded = hf_tokenizer.encode("a>", false).unwrap();
+        let before_encoded_ids = before_encoded.get_ids();
+        assert!(
+            before_encoded_ids == vec![0, 3],
+            "Before fix: expected tokens [▁a, >], got ids: {:?}",
+            before_encoded_ids
+        );
+
+        // Now create ByteTokenizer which should fix the prepend_scheme
+        let tokenizer = ByteTokenizer::from_tokenizer(hf_tokenizer).unwrap();
+
+        // After fix: tokenizer should NOT add a leading ▁
+        let after_encoded = tokenizer.hf_tokenizer.encode("a>", false).unwrap();
+        let after_encoded_ids = after_encoded.get_ids();
+        assert!(
+            after_encoded_ids == vec![2, 3],
+            "After fix: expected tokens [a, >], got ids: {:?}",
+            after_encoded_ids
+        );
+    }
 }
