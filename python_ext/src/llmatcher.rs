@@ -167,6 +167,50 @@ impl LLExecutor {
 
         Ok(())
     }
+
+    fn consume_token_par(
+        &self,
+        matchers_and_tokens: Bound<'_, PyList>,
+        py: Python<'_>,
+    ) -> PyResult<Vec<bool>> {
+        if matchers_and_tokens.len() == 0 {
+            return Err(PyValueError::new_err("No matchers"));
+        }
+
+        let mut mut_refs = vec![];
+        for ent in matchers_and_tokens.iter() {
+            let tupl = ent.cast::<PyTuple>()?;
+            if tupl.len() != 2 {
+                return Err(PyValueError::new_err("Expecting (LLMatcher, int) tuple"));
+            }
+            let interp = tupl.get_item(0)?.extract::<PyRefMut<LLMatcher>>()?;
+            let token = tupl.get_item(1)?.extract::<TokenId>()?;
+            mut_refs.push((interp, token));
+        }
+
+        if mut_refs.len() == 1 {
+            let (mut interp, token) = mut_refs.pop().unwrap();
+            return Ok(vec![interp.consume_token(token)]);
+        }
+
+        let mut_refs2: Vec<_> = mut_refs
+            .iter_mut()
+            .map(|(x, token)| (x.deref_mut(), *token))
+            .collect();
+
+        use rayon::prelude::*;
+
+        let results = py.detach(|| {
+            self.pool.install(|| {
+                mut_refs2
+                    .into_par_iter()
+                    .map(|(interp, token)| interp.consume_token_inner(token))
+                    .collect()
+            })
+        });
+
+        Ok(results)
+    }
 }
 
 impl LLMatcher {
@@ -232,6 +276,14 @@ impl LLMatcher {
             self.inner
                 .compute_mask()
                 .unwrap_or_else(|_| self.eos_token_set())
+        }
+    }
+
+    fn consume_token_inner(&mut self, sampled_token: TokenId) -> bool {
+        if self.inner.is_stopped() && sampled_token == self.tok_env.tok_trie().eos_token() {
+            true
+        } else {
+            self.inner.consume_token(sampled_token).is_ok()
         }
     }
 }
@@ -463,11 +515,7 @@ impl LLMatcher {
     }
 
     fn consume_token(&mut self, sampled_token: TokenId) -> bool {
-        if self.inner.is_stopped() && sampled_token == self.tok_env.tok_trie().eos_token() {
-            true
-        } else {
-            self.inner.consume_token(sampled_token).is_ok()
-        }
+        self.consume_token_inner(sampled_token)
     }
 
     fn consume_tokens(&mut self, tokens: Vec<TokenId>) -> bool {
