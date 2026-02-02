@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. Dates are d
 
 If a release doesn't introduce any interesting changes (build fixes etc.), it's skipped.
 
+#### [v1.5.0](https://github.com/guidance-ai/llguidance/compare/v1.4.0...v1.5.0) 2026-02-02
+
+- [FIX] Coerce `Metaspace` prepend_scheme to `never` [`#272`](https://github.com/guidance-ai/llguidance/pull/272)
+- Speed up toktrie add_bias (~3% improvement) [`#264`](https://github.com/guidance-ai/llguidance/pull/264)
+  - Thanks @omarkilani!
+- Add discord & email to readme [`#273`](https://github.com/guidance-ai/llguidance/pull/273)
+- Add parallel token consumption API (consume_token_par) [`#271`](https://github.com/guidance-ai/llguidance/pull/271)
+  - Thanks @alecsolder!
+- Add toolcalls doc [`#270`](https://github.com/guidance-ai/llguidance/pull/270)
+- Fix typo in README.md [`#269`](https://github.com/guidance-ai/llguidance/pull/269)
+  - Thanks @juliendenize!
+- Mark immutable pyclasses as frozen [`#260`](https://github.com/guidance-ai/llguidance/pull/260)
+  - Thanks @ngoldbaum!
+
 #### [v1.4.0](https://github.com/guidance-ai/llguidance/compare/v1.3.0...v1.4.0) 2025-11-18
 
 - Update pyo3 dependency to latest version to support python 3.14t [`#255`](https://github.com/guidance-ai/llguidance/pull/255)
