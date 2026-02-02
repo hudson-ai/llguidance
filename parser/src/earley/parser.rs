@@ -468,7 +468,18 @@ struct ParserState {
     parser_error: Option<String>,
     backtrack_byte_count: usize,
 
+    // Cache for compute_bias - avoids recomputing identical masks
+    // when lexer state hasn't changed (common in lazy lexemes)
+    bias_cache: Option<BiasCache>,
+
     shared_box: Box<SharedState>,
+}
+
+#[derive(Clone)]
+struct BiasCache {
+    lexer_state: StateID,
+    row_idx: u32,
+    mask: SimpleVob,
 }
 
 #[derive(Clone, Default)]
@@ -728,6 +739,7 @@ impl ParserState {
             }],
             trie_grammar_stack: 0,
             parser_error: None,
+            bias_cache: None,
             shared_box: Box::new(SharedState {
                 lexer_opt: Some(lexer),
             }),
@@ -820,6 +832,23 @@ impl ParserState {
 
     fn compute_bias(&mut self, computer: &dyn BiasComputer, start: &[u8]) -> SimpleVob {
         let t0 = Instant::now();
+
+        // Check cache - only valid when start is empty (common case)
+        if start.is_empty() {
+            let curr_state = self.lexer_state();
+            if let Some(ref cache) = self.bias_cache {
+                if cache.lexer_state == curr_state.lexer_state
+                    && cache.row_idx == curr_state.row_idx
+                {
+                    // Cache hit - return cloned mask
+                    let d = t0.elapsed();
+                    self.stats.compute_time_us += d.as_micros() as u64;
+                    self.perf_counters.compute_bias.record(d);
+                    return cache.mask.clone();
+                }
+            }
+        }
+
         let limits = self.limits.clone();
         let dfa = &mut self.lexer_mut().dfa;
         dfa.set_fuel(limits.step_lexer_fuel);
@@ -852,6 +881,16 @@ impl ParserState {
         let eos = computer.trie().eos_token();
         if eos != INVALID_TOKEN && start.is_empty() && self.lexer_allows_eos() {
             set.allow_token(eos);
+        }
+
+        // Update cache when start is empty
+        if start.is_empty() {
+            let curr_state = self.lexer_state();
+            self.bias_cache = Some(BiasCache {
+                lexer_state: curr_state.lexer_state,
+                row_idx: curr_state.row_idx,
+                mask: set.clone(),
+            });
         }
 
         let d = t0.elapsed();
