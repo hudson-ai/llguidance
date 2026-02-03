@@ -279,10 +279,10 @@ fn test_cache_lazy_then_greedy() {
 
 #[test]
 fn test_cache_with_max_tokens() {
-    let mut m = create_matcher(r#"start: /[a-z]+/"#, Some(10));
-    let tok_env = get_tok_env();
+    let mut m = create_matcher(r#"start: /[a-z]+[0-9]+/"#, Some(10));
 
-    for &tok in tok_env.tokenize("abcdefghijklmnopqrstuvwxyz")[..10].iter() {
+    let tok_env = get_tok_env();
+    for &tok in tok_env.tokenize("abcdefgh12345678910")[..10].iter() {
         m.consume_token(tok).unwrap();
         assert_cache_consistent(&mut m);
     }
