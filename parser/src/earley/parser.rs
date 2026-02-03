@@ -2990,4 +2990,8 @@ impl Parser {
             panic!("synthetic error");
         })
     }
+
+    pub fn invalidate_bias_cache(&mut self) {
+        self.state.bias_cache = None;
+    }
 }

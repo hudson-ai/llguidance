@@ -121,7 +121,10 @@ fn bench_compute_mask(c: &mut Criterion) {
             |b, &size| {
                 let tok_env = synthetic_tok_env(size);
                 let mut matcher = create_matcher(&tok_env, blog_grammar(), PREFIX_IN_STRING);
-                b.iter(|| black_box(matcher.compute_mask().unwrap()))
+                b.iter(|| {
+                    matcher.invalidate_bias_cache();
+                    black_box(matcher.compute_mask().unwrap())
+                })
             },
         );
     }
@@ -147,7 +150,10 @@ fn bench_compute_mask_positions(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(name), &prefix, |b, &prefix| {
             let tok_env = synthetic_tok_env(vocab_size);
             let mut matcher = create_matcher(&tok_env, blog_grammar(), prefix);
-            b.iter(|| black_box(matcher.compute_mask().unwrap()))
+            b.iter(|| {
+                matcher.invalidate_bias_cache();
+                black_box(matcher.compute_mask().unwrap())
+            })
         });
     }
     group.finish();
