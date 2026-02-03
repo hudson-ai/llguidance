@@ -479,6 +479,7 @@ struct ParserState {
 struct BiasCache {
     lexer_state: StateID,
     row_idx: u32,
+    has_pending_lexeme_bytes: bool,
     mask: SimpleVob,
 }
 
@@ -836,9 +837,11 @@ impl ParserState {
         // Check cache - only valid when start is empty (common case)
         if start.is_empty() {
             let curr_state = self.lexer_state();
+            let has_pending = self.has_pending_lexeme_bytes();
             if let Some(ref cache) = self.bias_cache {
                 if cache.lexer_state == curr_state.lexer_state
                     && cache.row_idx == curr_state.row_idx
+                    && cache.has_pending_lexeme_bytes == has_pending
                 {
                     // Cache hit - return cloned mask
                     let d = t0.elapsed();
@@ -889,6 +892,7 @@ impl ParserState {
             self.bias_cache = Some(BiasCache {
                 lexer_state: curr_state.lexer_state,
                 row_idx: curr_state.row_idx,
+                has_pending_lexeme_bytes: self.has_pending_lexeme_bytes(),
                 mask: set.clone(),
             });
         }
