@@ -468,8 +468,8 @@ struct ParserState {
     parser_error: Option<String>,
     backtrack_byte_count: usize,
 
-    // Cache for compute_bias - avoids recomputing identical masks
-    // when lexer state hasn't changed (common in lazy lexemes)
+    // Cache for compute_bias - avoids recomputing identical masks when lexer state hasn't changed
+    // (common in long lexemes, e.g. the interior of JSON strings)
     bias_cache: Option<BiasCache>,
 
     shared_box: Box<SharedState>,
