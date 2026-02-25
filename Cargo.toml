@@ -35,8 +35,8 @@ inherits = "release"
 debug = 1
 opt-level = 3
 
-# [patch.crates-io]
-# derivre = { path = "../derivre" }
+[patch.crates-io]
+derivre = { path = "../derivre" }
 
 [workspace.dependencies]
 toktrie = { path = "toktrie" }

@@ -11,6 +11,7 @@ GrammarFormat = Literal[
     "grammar",
     "json_schema",
     "json",
+    "python",
     "regex",
     "choice",
     "llguidance",
@@ -27,6 +28,7 @@ def grammar_from(format: GrammarFormat, text: str) -> str:
             "lark": Lark grammar, see https://github.com/guidance-ai/llguidance/blob/main/docs/syntax.md
             "gbnf", "ebnf", "cfg", "grammar": Lark grammar or GBNF grammar, see https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md
             "json_schema", "json": JSON schema, see https://github.com/guidance-ai/llguidance/blob/main/docs/json_schema.md
+            "python": JSON schema compiled to Python literal syntax (True/False/None, Python string quoting)
             "regex": Regular expression, see https://docs.rs/regex/latest/regex/#syntax
             "choice": JSON-formatted list of strings, e.g. '["a", "b", "c"]'
             "llguidance": JSON object like: {"grammars": [{"lark_grammar": "..."},{"json_schema": {...}}]}
@@ -54,6 +56,10 @@ def grammar_from(format: GrammarFormat, text: str) -> str:
         return LLMatcher.grammar_from_lark(text)
     if format in ("json_schema", "json"):
         return LLMatcher.grammar_from_json_schema(text)
+    if format == "python":
+        return LLMatcher.grammar_from_json_schema(
+            text, overrides={"output_style": "python"}
+        )
     if format == "regex":
         return LLMatcher.grammar_from_regex(text)
     if format == "choice":

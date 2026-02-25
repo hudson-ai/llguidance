@@ -328,6 +328,7 @@ impl TopLevelGrammar {
     /// - "json" or "json_schema" - data is (stringifed) JSON schema
     ///   see https://github.com/guidance-ai/llguidance/blob/main/docs/json_schema.md
     /// - "json_object" - equivalent to JSON schema: {"type":"object"}
+    /// - "python" - JSON schema compiled to Python literal syntax (True/False/None, Python string quoting)
     /// - "lark" - data is grammar in a variant of Lark syntax
     ///   see https://github.com/guidance-ai/llguidance/blob/main/docs/syntax.md
     /// - "llguidance" or "guidance" - data is a list of Lark or JSON schemas in JSON format
@@ -336,6 +337,14 @@ impl TopLevelGrammar {
             "regex" => Ok(Self::from_regex(data)),
             "json" | "json_schema" => Ok(Self::from_json_schema(serde_json::from_str(data)?)),
             "json_object" => Ok(Self::from_json_schema(json!({"type": "object"}))),
+            "python" => {
+                let mut schema: Value = serde_json::from_str(data)?;
+                schema.as_object_mut().unwrap().insert(
+                    "x-guidance".to_string(),
+                    json!({"output_style": "python"}),
+                );
+                Ok(Self::from_json_schema(schema))
+            }
             "lark" => Ok(Self::from_lark(data.to_string())),
             "llguidance" | "guidance" => Self::from_lark_or_grammar_list(data),
             _ => bail!("unknown constraint type: {tag}"),
