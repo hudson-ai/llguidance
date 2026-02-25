@@ -89,6 +89,11 @@ Following keys are available inside of it:
   without named escapes (for example, U+0000, U+001E) become unrepresentable.
 - `lenient`, defaults to `false`; when set to `true`, the unsupported keywords and formats will be ignored; implies `coerce_one_of: true`
 - `output_style`, defaults to `"json"`; set to `"python"` to generate Python literal syntax instead of JSON (see [Python output style](#python-output-style) below)
+- `python_quote_style`, defaults to `"double"`; controls quoting in Python output mode. Options:
+  `"double"` (default) — prefer double quotes, following [ruff](https://docs.astral.sh/ruff/settings/#lint_flake8-quotes_inline-quotes) / [PEP 8](https://peps.python.org/pep-0008/#string-quotes);
+  `"single"` — prefer single quotes;
+  `"flexible"` — let the model choose between single and double quotes.
+  For known strings (dict keys, const, enum), the optimal quote is always picked to avoid backslash escapes regardless of this setting (Q003).
 
 For example:
 
@@ -191,10 +196,18 @@ The output is valid Python that can be parsed with `ast.literal_eval()`.
 | arrays     | `[...]`       | `[...]`             |
 | objects    | `{"k": v}`    | `{'k': v}`          |
 
-String quoting: the grammar allows the model to choose between single-quoted (`'...'`) and
-double-quoted (`"..."`) strings for each string value. Within single-quoted strings, `\'` is a
-valid escape and `"` does not need escaping. Within double-quoted strings, `\"` is a valid escape
-and `'` does not need escaping.
+String quoting follows [flake8-quotes](https://github.com/zheller/flake8-quotes) conventions
+by default: single quotes are preferred. For known strings (dict keys, `const`, `enum` values),
+the quote is chosen to avoid backslash escapes per PEP 8 / flake8 Q003 — e.g., a string
+containing `'` will use double quotes instead. For general strings, the configured
+`python_quote_style` determines the quoting:
+
+- `"double"` (default): always double-quoted
+- `"single"`: always single-quoted
+- `"flexible"`: model chooses between `'...'` and `"..."`
+
+Within single-quoted strings, `\'` is a valid escape and `"` does not need escaping.
+Within double-quoted strings, `\"` is a valid escape and `'` does not need escaping.
 
 ### Usage
 

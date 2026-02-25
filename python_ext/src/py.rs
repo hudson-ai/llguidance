@@ -338,12 +338,13 @@ struct JsonCompiler {
     coerce_one_of: bool,
     json_allowed_escapes: Option<String>,
     output_style: String,
+    python_quote_style: String,
 }
 
 #[pymethods]
 impl JsonCompiler {
     #[new]
-    #[pyo3(signature = (separators = None, whitespace_flexible = false, coerce_one_of = false, whitespace_pattern = None, json_allowed_escapes = None, output_style = None))]
+    #[pyo3(signature = (separators = None, whitespace_flexible = false, coerce_one_of = false, whitespace_pattern = None, json_allowed_escapes = None, output_style = None, python_quote_style = None))]
     fn py_new(
         separators: Option<(String, String)>,
         whitespace_flexible: bool,
@@ -351,6 +352,7 @@ impl JsonCompiler {
         whitespace_pattern: Option<String>,
         json_allowed_escapes: Option<String>,
         output_style: Option<String>,
+        python_quote_style: Option<String>,
     ) -> Self {
         let (item_separator, key_separator) = separators.unwrap_or_else(|| {
             if whitespace_flexible {
@@ -367,6 +369,7 @@ impl JsonCompiler {
             whitespace_pattern,
             json_allowed_escapes,
             output_style: output_style.unwrap_or_else(|| "json".to_string()),
+            python_quote_style: python_quote_style.unwrap_or_else(|| "double".to_string()),
         }
     }
     #[pyo3(signature = (schema, check = true))]
@@ -374,6 +377,9 @@ impl JsonCompiler {
         let mut schema: Value = serde_json::from_str(schema).map_err(val_error)?;
         let output_style: llguidance::OutputStyle =
             serde_json::from_value(Value::String(self.output_style.clone()))
+                .map_err(val_error)?;
+        let python_quote_style: llguidance::PythonQuoteStyle =
+            serde_json::from_value(Value::String(self.python_quote_style.clone()))
                 .map_err(val_error)?;
         let compile_options = JsonCompileOptions {
             item_separator: self.item_separator.clone(),
@@ -385,6 +391,7 @@ impl JsonCompiler {
             json_allowed_escapes: self.json_allowed_escapes.clone(),
             retriever: None,
             output_style,
+            python_quote_style,
         };
         compile_options.apply_to(&mut schema);
         check_grammar(TopLevelGrammar::from_json_schema(schema), check)

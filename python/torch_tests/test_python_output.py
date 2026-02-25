@@ -62,6 +62,16 @@ def validate_python_output(output: str, schema: Dict[str, Any]) -> None:
     jsonschema.validate(instance=json_value, schema=schema)
 
 
+def flexible_grammar(schema: Any) -> str:
+    """Compile a schema with python output_style and flexible quote style."""
+    if isinstance(schema, str):
+        schema = json.loads(schema)
+    return LLMatcher.grammar_from_json_schema(
+        schema,
+        overrides={"output_style": "python", "python_quote_style": "flexible"},
+    )
+
+
 # === Task 6.1: Basic type tests with ast.literal_eval ===
 
 
@@ -123,52 +133,62 @@ class TestPythonNumbers:
 
 
 class TestPythonStrings:
-    def test_single_quoted(self):
+    def test_default_double_quoted(self):
+        """Default (double) style: only double-quoted strings accepted."""
         grm = grammar_from("python", '{"type": "string"}')
+        check_python_grammar(grm, ['"hello"'], ["'hello'"])
+
+    def test_flexible_both_quotes(self):
+        """Flexible style: both single and double quoted accepted."""
+        grm = flexible_grammar('{"type": "string"}')
         check_python_grammar(grm, ["'hello'", '"hello"'], [])
 
     def test_empty_strings(self):
         grm = grammar_from("python", '{"type": "string"}')
-        check_python_grammar(grm, ["''", '""'], [])
+        check_python_grammar(grm, ['""'], ["''"])
 
-    def test_single_quote_contains_double_quote(self):
-        """Single-quoted string containing unescaped double-quote."""
+    def test_double_quote_contains_escaped_double_quote(self):
+        """Double-quoted string containing escaped double-quote."""
         grm = grammar_from("python", '{"type": "string"}')
-        check_python_grammar(grm, ['\'he said "hi"\''], [])
-        validate_python_output('\'he said "hi"\'', {"type": "string"})
+        check_python_grammar(grm, ['"he said \\"hi\\""'], [])
+        validate_python_output('"he said \\"hi\\""', {"type": "string"})
 
-    def test_double_quote_contains_single_quote(self):
-        """Double-quoted string containing unescaped single-quote."""
+    def test_unescaped_single_quote_in_double_quoted(self):
+        r"""Double-quoted string with unescaped single-quote: "it's" """
         grm = grammar_from("python", '{"type": "string"}')
+        check_python_grammar(grm, ['"it\'s"'], [])
+        validate_python_output('"it\'s"', {"type": "string"})
+
+    def test_flexible_double_quote_contains_single_quote(self):
+        """Flexible mode: double-quoted string containing unescaped single-quote."""
+        grm = flexible_grammar('{"type": "string"}')
         check_python_grammar(grm, ['"she said \'hi\'"'], [])
         validate_python_output('"she said \'hi\'"', {"type": "string"})
 
-    def test_escaped_single_quote_in_single_quoted(self):
-        r"""Single-quoted string with escaped single-quote: 'it\'s'"""
-        grm = grammar_from("python", '{"type": "string"}')
-        check_python_grammar(grm, ["'it\\'s'"], [])
-        validate_python_output("'it\\'s'", {"type": "string"})
-
-    def test_escaped_double_quote_in_double_quoted(self):
-        r"""Double-quoted string with escaped double-quote: "it\"s" """
-        grm = grammar_from("python", '{"type": "string"}')
+    def test_flexible_escaped_double_quote_in_double_quoted(self):
+        r"""Flexible mode: double-quoted string with escaped double-quote."""
+        grm = flexible_grammar('{"type": "string"}')
         check_python_grammar(grm, ['"it\\"s"'], [])
         validate_python_output('"it\\"s"', {"type": "string"})
 
     def test_escaped_backslash(self):
-        r"""String with escaped backslash: 'back\\slash'"""
+        r"""String with escaped backslash: "back\\slash" """
         grm = grammar_from("python", '{"type": "string"}')
-        check_python_grammar(grm, ["'back\\\\slash'"], [])
-        validate_python_output("'back\\\\slash'", {"type": "string"})
+        check_python_grammar(grm, ['"back\\\\slash"'], [])
+        validate_python_output('"back\\\\slash"', {"type": "string"})
 
     def test_escaped_newline(self):
-        r"""String with escaped newline: 'new\nline'"""
+        r"""String with escaped newline: "new\nline" """
         grm = grammar_from("python", '{"type": "string"}')
-        check_python_grammar(grm, ["'new\\nline'"], [])
-        validate_python_output("'new\\nline'", {"type": "string"})
+        check_python_grammar(grm, ['"new\\nline"'], [])
+        validate_python_output('"new\\nline"', {"type": "string"})
 
     def test_string_with_spaces(self):
         grm = grammar_from("python", '{"type": "string"}')
+        check_python_grammar(grm, ['"abc def"'], ["'abc def'"])
+
+    def test_flexible_string_with_spaces(self):
+        grm = flexible_grammar('{"type": "string"}')
         check_python_grammar(grm, ["'abc def'", '"abc def"'], [])
 
     def test_literal_eval_single_quoted(self):
@@ -223,7 +243,7 @@ class TestRoundTrip:
             },
             "required": ["name", "age"],
         }
-        validate_python_output("{'name': 'Alice', 'age': 30}", schema)
+        validate_python_output('{"name": "Alice", "age": 30}', schema)
 
     def test_object_with_boolean_and_null_roundtrip(self):
         schema = {
@@ -234,7 +254,7 @@ class TestRoundTrip:
             },
             "required": ["active", "deleted"],
         }
-        validate_python_output("{'active': True, 'deleted': None}", schema)
+        validate_python_output('{"active": True, "deleted": None}', schema)
 
 
 # === Task 6.3: Complex schema tests ===
@@ -262,11 +282,11 @@ class TestComplexSchemas:
         grm = grammar_from("python", json.dumps(schema))
         check_python_grammar(
             grm,
-            ["{'items': [{'flag': True, 'value': 1}]}"],
+            ['{"items": [{"flag": True, "value": 1}]}'],
             [],
         )
         validate_python_output(
-            "{'items': [{'flag': True, 'value': 1}]}", schema
+            '{"items": [{"flag": True, "value": 1}]}', schema
         )
 
     def test_enum_mixed_types(self):
@@ -274,19 +294,19 @@ class TestComplexSchemas:
         grm = grammar_from("python", json.dumps(schema))
         check_python_grammar(
             grm,
-            ["1", "'hello'", "True", "None"],
+            ["1", '"hello"', "True", "None"],
             ["false", "null", "2"],
         )
         validate_python_output("1", schema)
-        validate_python_output("'hello'", schema)
+        validate_python_output('"hello"', schema)
         validate_python_output("True", schema)
         validate_python_output("None", schema)
 
     def test_anyof_string_or_integer(self):
         schema = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
         grm = grammar_from("python", json.dumps(schema))
-        check_python_grammar(grm, ["'hello'", "42"], [])
-        validate_python_output("'hello'", schema)
+        check_python_grammar(grm, ['"hello"', "42"], [])
+        validate_python_output('"hello"', schema)
         validate_python_output("42", schema)
 
     def test_object_grammar_accepts_python_literals(self):
@@ -303,7 +323,7 @@ class TestComplexSchemas:
             "additionalProperties": False,
         }
         grm = grammar_from("python", json.dumps(schema))
-        test_output = "{'name': 'Alice', 'age': 30, 'active': True, 'notes': None}"
+        test_output = '{"name": "Alice", "age": 30, "active": True, "notes": None}'
         check_python_grammar(grm, [test_output], [])
         validate_python_output(test_output, schema)
 
@@ -311,26 +331,33 @@ class TestComplexSchemas:
         """Pattern with a simple regex - digits only."""
         schema = {"type": "string", "pattern": "^\\d{3}-\\d{4}$"}
         grm = grammar_from("python", json.dumps(schema))
-        check_python_grammar(grm, ["'123-4567'"], ["'abc-defg'", "'12-345'"])
-        validate_python_output("'123-4567'", schema)
+        check_python_grammar(grm, ['"123-4567"'], ['"abc-defg"', '"12-345"'])
+        validate_python_output('"123-4567"', schema)
 
     def test_pattern_with_min_max_length(self):
         """Pattern + length constraints."""
         schema = {"type": "string", "pattern": "^[a-z]+$", "minLength": 2, "maxLength": 5}
         grm = grammar_from("python", json.dumps(schema))
-        check_python_grammar(grm, ["'ab'", "'abcde'"], ["'a'", "'abcdef'"])
-        validate_python_output("'abc'", schema)
+        check_python_grammar(grm, ['"ab"', '"abcde"'], ['"a"', '"abcdef"'])
+        validate_python_output('"abc"', schema)
 
     def test_pattern_allows_single_quotes(self):
         r"""Pattern that matches strings containing literal single-quotes.
 
         The regex [a-z']+ allows single-quote chars in the string value.
-        The grammar must use double-quoting so the ' doesn't need escaping,
-        or single-quoting with \' escapes.
+        With default double-quote style, no escaping is needed for '.
         """
         schema = {"type": "string", "pattern": "^[a-z']+$"}
         grm = grammar_from("python", json.dumps(schema))
-        # double-quoted: no escaping needed for '
+        # double-quoted with unescaped ': "it's"
+        check_python_grammar(grm, ['"it\'s"'], [])
+        validate_python_output('"it\'s"', schema)
+
+    def test_pattern_allows_single_quotes_flexible(self):
+        r"""Flexible mode: pattern allowing single-quotes can use double-quoting."""
+        schema = {"type": "string", "pattern": "^[a-z']+$"}
+        grm = flexible_grammar(schema)
+        # double-quoted avoids escaping
         check_python_grammar(grm, ["\"it's\""], [])
         validate_python_output("\"it's\"", schema)
 
@@ -338,14 +365,13 @@ class TestComplexSchemas:
         r"""Pattern that matches strings containing literal double-quotes.
 
         The regex [a-z"]+ allows double-quote chars in the string value.
-        The grammar must use single-quoting so the " doesn't need escaping,
-        or double-quoting with \" escapes.
+        With default double-quote style, \" escapes are needed.
         """
         schema = {"type": "string", "pattern": "^[a-z\"]+$"}
         grm = grammar_from("python", json.dumps(schema))
-        # single-quoted: no escaping needed for "
-        check_python_grammar(grm, ["'say\"hi'"], [])
-        validate_python_output("'say\"hi'", schema)
+        # double-quoted: escaping needed for "
+        check_python_grammar(grm, ['"say\\"hi"'], [])
+        validate_python_output('"say\\"hi"', schema)
 
     def test_pattern_with_escaped_backslash(self):
         r"""Pattern that matches strings containing literal backslashes.
@@ -356,8 +382,8 @@ class TestComplexSchemas:
         """
         schema = {"type": "string", "pattern": "^[a-z\\\\]+$"}
         grm = grammar_from("python", json.dumps(schema))
-        check_python_grammar(grm, ["'a\\\\b'"], [])
-        validate_python_output("'a\\\\b'", schema)
+        check_python_grammar(grm, ['"a\\\\b"'], [])
+        validate_python_output('"a\\\\b"', schema)
 
     def test_pattern_with_newline(self):
         r"""Pattern that matches strings containing literal newlines.
@@ -368,8 +394,8 @@ class TestComplexSchemas:
         """
         schema = {"type": "string", "pattern": "^[a-z\\n]+$"}
         grm = grammar_from("python", json.dumps(schema))
-        check_python_grammar(grm, ["'a\\nb'"], [])
-        validate_python_output("'a\\nb'", schema)
+        check_python_grammar(grm, ['"a\\nb"'], [])
+        validate_python_output('"a\\nb"', schema)
 
     def test_pattern_in_object_property(self):
         """Pattern-constrained string inside an object - full pipeline test."""
@@ -389,7 +415,7 @@ class TestComplexSchemas:
             "additionalProperties": False,
         }
         grm = grammar_from("python", json.dumps(schema))
-        test_output = "{'email': 'foo@bar.com', 'code': 'AB123'}"
+        test_output = '{"email": "foo@bar.com", "code": "AB123"}'
         check_python_grammar(grm, [test_output], [])
         validate_python_output(test_output, schema)
 
@@ -404,8 +430,8 @@ class TestComplexSchemas:
         schema = {"type": "string", "pattern": "^[a-z'\"\\\\]+$"}
         grm = grammar_from("python", json.dumps(schema))
         # A string with just letters works in either quote style
-        check_python_grammar(grm, ["'hello'"], [])
-        validate_python_output("'hello'", schema)
+        check_python_grammar(grm, ['"hello"'], [])
+        validate_python_output('"hello"', schema)
 
     def test_x_guidance_output_style(self):
         """Test that x-guidance with output_style=python works."""
@@ -418,5 +444,80 @@ class TestComplexSchemas:
         grm = LLMatcher.grammar_from_json_schema(
             schema, overrides={"output_style": "python"}
         )
-        check_python_grammar(grm, ["{'x': True}", "{'x': False}"], [])
-        validate_python_output("{'x': True}", schema)
+        check_python_grammar(grm, ['{"x": True}', '{"x": False}'], [])
+        validate_python_output('{"x": True}', schema)
+
+
+class TestPythonQuoteStyle:
+    """Tests for the python_quote_style configuration."""
+
+    def test_double_style_general_string(self):
+        """Double style: general strings use double quotes only."""
+        grm = LLMatcher.grammar_from_json_schema(
+            {"type": "string"},
+            overrides={"output_style": "python", "python_quote_style": "double"},
+        )
+        check_python_grammar(grm, ['"hello"'], ["'hello'"])
+
+    def test_double_style_object_keys(self):
+        """Double style: dict keys prefer double quotes."""
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "boolean"}},
+            "required": ["name"],
+            "additionalProperties": False,
+        }
+        grm = LLMatcher.grammar_from_json_schema(
+            schema,
+            overrides={"output_style": "python", "python_quote_style": "double"},
+        )
+        check_python_grammar(grm, ['{"name": True}'], [])
+
+    def test_flexible_style_both_accepted(self):
+        """Flexible style: both quote styles accepted for general strings."""
+        grm = flexible_grammar({"type": "string"})
+        check_python_grammar(grm, ["'hello'", '"hello"'], [])
+
+    def test_const_string_deterministic_double(self):
+        """Const string without quotes: uses preferred double quote."""
+        schema = {"const": "hello"}
+        grm = grammar_from("python", json.dumps(schema))
+        check_python_grammar(grm, ['"hello"'], ["'hello'"])
+
+    def test_const_string_with_single_quote_uses_double(self):
+        """Const string containing ' but not ": uses double to avoid escape (Q003)."""
+        schema = {"const": "it's"}
+        grm = grammar_from("python", json.dumps(schema))
+        check_python_grammar(grm, ["\"it's\""], ["'it\\'s'"])
+
+    def test_const_string_with_double_quote_uses_single(self):
+        """Const string containing " but not ': uses single to avoid escape (Q003)."""
+        schema = {"const": 'say "hi"'}
+        grm = grammar_from("python", json.dumps(schema))
+        check_python_grammar(grm, ['\'say "hi"\''], [])
+
+    def test_const_string_with_both_quotes_uses_preferred(self):
+        """Const string containing both ' and ": uses preferred double style."""
+        schema = {"const": "it's a \"test\""}
+        grm = grammar_from("python", json.dumps(schema))
+        # Double is preferred when both are present
+        check_python_grammar(grm, ['"it\'s a \\"test\\""'], [])
+
+    def test_enum_strings_deterministic(self):
+        """Enum values are each quoted deterministically."""
+        schema = {"enum": ["hello", "it's", 'say "hi"']}
+        grm = grammar_from("python", json.dumps(schema))
+        # "hello" → "hello" (preferred double)
+        check_python_grammar(grm, ['"hello"'], [])
+        # "it's" → "it's" (double, no conflict)
+        check_python_grammar(grm, ["\"it's\""], [])
+        # 'say "hi"' → 'say "hi"' (single, Q003 avoidance)
+        check_python_grammar(grm, ['\'say "hi"\''], [])
+
+    def test_x_guidance_python_quote_style(self):
+        """x-guidance with python_quote_style works."""
+        grm = LLMatcher.grammar_from_json_schema(
+            {"type": "string"},
+            overrides={"output_style": "python", "python_quote_style": "flexible"},
+        )
+        check_python_grammar(grm, ["'hello'", '"hello"'], [])
