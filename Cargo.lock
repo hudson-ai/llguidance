@@ -544,8 +544,7 @@ dependencies = [
 [[package]]
 name = "derivre"
 version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "786c7c65c4ef0c7deb05de3005e01991612a8f09fe0844fc0969c68b90468ba8"
+source = "git+https://github.com/hudson-ai/derivre?rev=00924cbdb2025ce24fb460ec3b3e911bf16fd0b3#00924cbdb2025ce24fb460ec3b3e911bf16fd0b3"
 dependencies = [
  "ahash",
  "anyhow",

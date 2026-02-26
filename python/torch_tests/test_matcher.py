@@ -1,16 +1,16 @@
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple
+
 import llguidance
+import numpy as np
+import pytest
+from llguidance import LLMatcher, LLParserLimits, LLTokenizer, StructTag
 from llguidance.numpy import (
-    fill_next_token_bitmask_par,
-    fill_next_token_bitmask_par_with_draft_tokens,
     allocate_token_bitmask,
     consume_token_par,
+    fill_next_token_bitmask_par,
+    fill_next_token_bitmask_par_with_draft_tokens,
 )
-
-from llguidance import LLMatcher, LLTokenizer, StructTag, LLParserLimits
-import pytest
 from numpy.typing import NDArray
-import numpy as np
 
 _tokenizer = None
 

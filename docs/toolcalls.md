@@ -233,3 +233,27 @@ tools: %json {json.dumps(schema)}
 **Note:** 
 - This is just one possible approach. You can adjust the injected prompt to produce any output format you prefer, such as a plain JSON array of tool calls without the `functools` prefix, depending on your integration needs.
 - While prompt-injection can unify outputs, it may not be as reliable as model-specific grammars as the model was trained intensively for its own format. However, careful prompting and, if possible, fine-tuning can help improve consistency and close the gap.
+
+## Python literal output style
+
+For models that generate Python-style output more reliably than JSON, you can use the Python output
+style (`output_style: "python"`). This produces Python literals (`True`, `False`, `None`, single or
+double-quoted strings) instead of JSON, while still being constrained by a JSON schema.
+
+See [Python output style](./json_schema.md#python-output-style) for full details.
+
+Example using the `%python` tag in a grammar:
+
+```py
+grammar = f"""
+start: <|tool_call|> tools <|/tool_call|>
+tools: %python {json.dumps(schema)}
+"""
+```
+
+This would produce output like:
+```
+<|tool_call|>[{'name': 'add', 'arguments': {'x': 123345432, 'y': 4563464236}}]<|/tool_call|>
+```
+
+The output can be parsed with `ast.literal_eval()` and then validated against the original JSON schema.

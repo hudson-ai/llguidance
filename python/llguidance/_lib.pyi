@@ -436,9 +436,17 @@ class JsonCompiler:
         whitespace_flexible: bool = False,
         coerce_one_of: bool = False,
         whitespace_pattern: Optional[str] = None,
+        json_allowed_escapes: Optional[str] = None,
+        output_style: Optional[str] = None,
+        python_quote_style: Optional[str] = None,
     ) -> "JsonCompiler":
         """
         Create a new JSON compiler.
+
+        Args:
+            output_style: "json" (default) or "python" for Python literal syntax.
+            python_quote_style: "double" (default, ruff/flake8-quotes), "single", or
+                "flexible" (model chooses). Only applies when output_style is "python".
         Deprecated. Use grammar_from() or LLMatcher.grammar_from_json_schema() instead,
         together with LLMatcher.validate_grammar().
         """
@@ -603,6 +611,11 @@ class JsonCompileOptions(TypedDict, total=False):
     coerce_one_of: Optional[bool]
     # ignore unimplemented keywords; defaults to false
     lenient: Optional[bool]
+    # "json" (default) or "python" for Python literal syntax
+    output_style: Optional[str]
+    # "double" (default, ruff/flake8-quotes), "single", or "flexible".
+    # Only applies when output_style is "python".
+    python_quote_style: Optional[str]
 
 
 class LLParserLimits:

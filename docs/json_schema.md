@@ -88,6 +88,12 @@ Following keys are available inside of it:
   `"nrbtf\\\""` to disallow `\uXXXX` escapes. Note that removing `u` means control characters
   without named escapes (for example, U+0000, U+001E) become unrepresentable.
 - `lenient`, defaults to `false`; when set to `true`, the unsupported keywords and formats will be ignored; implies `coerce_one_of: true`
+- `output_style`, defaults to `"json"`; set to `"python"` to generate Python literal syntax instead of JSON (see [Python output style](#python-output-style) below)
+- `python_quote_style`, defaults to `"double"`; controls quoting in Python output mode. Options:
+  `"double"` (default) — prefer double quotes, following [ruff](https://docs.astral.sh/ruff/settings/#lint_flake8-quotes_inline-quotes) / [PEP 8](https://peps.python.org/pep-0008/#string-quotes);
+  `"single"` — prefer single quotes;
+  `"flexible"` — let the model choose between single and double quotes.
+  For known strings (dict keys, const, enum), the optimal quote is always picked to avoid backslash escapes regardless of this setting (Q003).
 
 For example:
 
@@ -169,3 +175,97 @@ E.g., if a schema contains both `"properties"` and `"allOf"` (which has another 
 These semantics extend even to applicators that violate the typical [keyword independence](https://json-schema.org/draft/2020-12/json-schema-core#section-10.1) semantics of JSON keywords.
 
 E.g., even though the behavior of `additionalProperties` is defined in terms of `"properties"` and `"patternProperties"` its position in a schema determines its precedence independently of the location of `"properties"`. If it applies to a property defined in a subschema of `"allOf"` or `"anyOf"`, whether it applies before or after said definition is determined by its position relative to the `"allOf"` or `"anyOf"` keyword.
+
+## Python output style
+
+When `output_style` is set to `"python"`, the grammar produces Python literal syntax instead of JSON.
+This is useful for models that have been trained on Python code and generate Python-style output
+more reliably than JSON.
+
+The output is valid Python that can be parsed with `ast.literal_eval()`.
+
+### Syntax differences from JSON
+
+| Element    | JSON          | Python              |
+|------------|---------------|---------------------|
+| true       | `true`        | `True`              |
+| false      | `false`       | `False`             |
+| null       | `null`        | `None`              |
+| strings    | `"..."` only  | `'...'` or `"..."` (model chooses) |
+| numbers    | same          | same                |
+| arrays     | `[...]`       | `[...]`             |
+| objects    | `{"k": v}`    | `{'k': v}`          |
+
+String quoting follows [flake8-quotes](https://github.com/zheller/flake8-quotes) conventions
+by default: single quotes are preferred. For known strings (dict keys, `const`, `enum` values),
+the quote is chosen to avoid backslash escapes per PEP 8 / flake8 Q003 — e.g., a string
+containing `'` will use double quotes instead. For general strings, the configured
+`python_quote_style` determines the quoting:
+
+- `"double"` (default): always double-quoted
+- `"single"`: always single-quoted
+- `"flexible"`: model chooses between `'...'` and `"..."`
+
+Within single-quoted strings, `\'` is a valid escape and `"` does not need escaping.
+Within double-quoted strings, `\"` is a valid escape and `'` does not need escaping.
+
+### Usage
+
+Via `x-guidance` in the schema:
+
+```json
+{
+   "x-guidance": {
+      "output_style": "python"
+   },
+   "type": "object",
+   "properties": {
+      "name": { "type": "string" },
+      "active": { "type": "boolean" }
+   },
+   "required": ["name", "active"]
+}
+```
+
+This produces output like `{'name': 'Alice', 'active': True}`.
+
+Via the Python API:
+
+```python
+from llguidance import grammar_from
+
+# Using the "python" format shorthand
+grm = grammar_from("python", '{"type": "object", "properties": {"x": {"type": "boolean"}}}')
+
+# Or using grammar_from_json_schema with overrides
+from llguidance import LLMatcher
+grm = LLMatcher.grammar_from_json_schema(
+    {"type": "object", "properties": {"x": {"type": "boolean"}}},
+    overrides={"output_style": "python"}
+)
+```
+
+Via the Lark-like grammar syntax:
+
+```
+start: result
+result: %python {"type": "object", "properties": {"x": {"type": "boolean"}}}
+```
+
+### Round-trip validation
+
+Output from Python mode can be round-tripped back to JSON for validation:
+
+```python
+import ast, json, jsonschema
+
+schema = {"type": "object", "properties": {"x": {"type": "boolean"}}, "required": ["x"]}
+python_output = "{'x': True}"
+
+# Parse the Python literal
+parsed = ast.literal_eval(python_output)  # {'x': True}
+
+# Convert to JSON and validate against the original schema
+json_value = json.loads(json.dumps(parsed))
+jsonschema.validate(instance=json_value, schema=schema)  # passes
+```

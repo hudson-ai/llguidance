@@ -35,8 +35,8 @@ inherits = "release"
 debug = 1
 opt-level = 3
 
-# [patch.crates-io]
-# derivre = { path = "../derivre" }
+[patch.crates-io]
+derivre = { git = "https://github.com/hudson-ai/derivre", rev = "00924cbdb2025ce24fb460ec3b3e911bf16fd0b3" }
 
 [workspace.dependencies]
 toktrie = { path = "toktrie" }
