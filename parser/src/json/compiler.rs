@@ -3,7 +3,9 @@ use crate::grammar_builder::GrammarResult;
 use crate::json::schema::{NumberSchema, StringSchema};
 use crate::{regex_to_lark, HashMap};
 use anyhow::{anyhow, bail, Context, Result};
-use derivre::{JsonQuoteOptions, RegexAst, StringEscapeOptions, FallbackEscapeFormat, QuoteEscapeMethod};
+use derivre::{
+    FallbackEscapeFormat, JsonQuoteOptions, QuoteEscapeMethod, RegexAst, StringEscapeOptions,
+};
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -408,7 +410,11 @@ impl Compiler {
             self.any_cache = Some(json_any); // avoid infinite recursion
             let num = self.json_number(&NumberSchema::default()).unwrap();
             let is_python = self.options.output_style == OutputStyle::Python;
-            let tf_str = if is_python { "True|False" } else { "true|false" };
+            let tf_str = if is_python {
+                "True|False"
+            } else {
+                "true|false"
+            };
             let null_str = if is_python { "None" } else { "null" };
             let tf = self.builder.regex.regex(tf_str).unwrap();
             let options = vec![
@@ -765,35 +771,18 @@ impl Compiler {
     }
 
     /// Wrap a regex AST in a StringEscape node with the given quote character.
+    /// Uses Python string literal escape rules: \n, \r, \t, \b, \f single-char
+    /// escapes, \uXXXX fallback for control characters, backslash-escaped quote.
     fn python_quote_with(&self, ast: RegexAst, qc: char) -> RegexAst {
-        let escapes_str = self
-            .options
-            .json_allowed_escapes
-            .clone()
-            .unwrap_or_else(|| "nrbtf\\u".to_string());
-
-        let escape_map: &[(u8, u8, u8)] = &[
-            (b'b', 0x08, b'b'),
-            (b'f', 0x0C, b'f'),
-            (b'n', b'\n', b'n'),
-            (b'r', b'\r', b'r'),
-            (b't', b'\t', b't'),
-        ];
-        let single_char_escapes: Vec<(u8, u8)> = escape_map
-            .iter()
-            .filter(|(key, _, _)| escapes_str.as_bytes().contains(key))
-            .map(|(_, byte, esc)| (*byte, *esc))
-            .collect();
-
-        let fallback_escape = if escapes_str.contains('u') {
-            FallbackEscapeFormat::UnicodeXXXX
-        } else {
-            FallbackEscapeFormat::None
-        };
-
         let opts = StringEscapeOptions {
-            single_char_escapes,
-            fallback_escape,
+            single_char_escapes: vec![
+                (0x08, b'b'),  // \b backspace
+                (0x0C, b'f'),  // \f form feed
+                (b'\n', b'n'), // \n newline
+                (b'\r', b'r'), // \r carriage return
+                (b'\t', b't'), // \t tab
+            ],
+            fallback_escape: FallbackEscapeFormat::UnicodeXXXX,
             quote_char: qc,
             quote_escape: QuoteEscapeMethod::Backslash,
             must_escape: (0x00..=0x1Fu8).chain(std::iter::once(0x7Fu8)).collect(),
@@ -840,7 +829,12 @@ impl Compiler {
         let r = match schema {
             Schema::Null => literal_regex(if is_python { "None" } else { "null" }),
             Schema::Boolean(None) => Some(RegexAst::Regex(
-                if is_python { "True|False" } else { "true|false" }.to_string(),
+                if is_python {
+                    "True|False"
+                } else {
+                    "true|false"
+                }
+                .to_string(),
             )),
             Schema::Boolean(Some(value)) => {
                 if is_python {
@@ -1077,9 +1071,10 @@ fn always_non_empty(ast: &RegexAst) -> bool {
     match ast {
         RegexAst::Or(asts) => asts.iter().any(always_non_empty),
         RegexAst::Concat(asts) => asts.iter().all(always_non_empty),
-        RegexAst::Repeat(ast, _, _) | RegexAst::JsonQuote(ast, _) | RegexAst::StringEscape(ast, _) | RegexAst::LookAhead(ast) => {
-            always_non_empty(ast)
-        }
+        RegexAst::Repeat(ast, _, _)
+        | RegexAst::JsonQuote(ast, _)
+        | RegexAst::StringEscape(ast, _)
+        | RegexAst::LookAhead(ast) => always_non_empty(ast),
 
         RegexAst::EmptyString
         | RegexAst::Literal(_)
@@ -1270,10 +1265,7 @@ mod tests {
             output_style: OutputStyle::Python,
             ..Default::default()
         };
-        let mut compiler = Compiler::new(
-            opts,
-            GrammarBuilder::new(None, ParserLimits::default()),
-        );
+        let mut compiler = Compiler::new(opts, GrammarBuilder::new(None, ParserLimits::default()));
 
         // Check null -> None
         let null_ast = compiler.regex_compile(&Schema::Null).unwrap();
@@ -1290,14 +1282,18 @@ mod tests {
         }
 
         // Check const true -> True
-        let true_ast = compiler.regex_compile(&Schema::Boolean(Some(true))).unwrap();
+        let true_ast = compiler
+            .regex_compile(&Schema::Boolean(Some(true)))
+            .unwrap();
         match true_ast {
             Some(RegexAst::Literal(s)) => assert_eq!(s, "True"),
             other => panic!("expected Literal(\"True\"), got {:?}", other),
         }
 
         // Check const false -> False
-        let false_ast = compiler.regex_compile(&Schema::Boolean(Some(false))).unwrap();
+        let false_ast = compiler
+            .regex_compile(&Schema::Boolean(Some(false)))
+            .unwrap();
         match false_ast {
             Some(RegexAst::Literal(s)) => assert_eq!(s, "False"),
             other => panic!("expected Literal(\"False\"), got {:?}", other),
@@ -1311,10 +1307,7 @@ mod tests {
             output_style: OutputStyle::Python,
             ..Default::default()
         };
-        let compiler = Compiler::new(
-            opts,
-            GrammarBuilder::new(None, ParserLimits::default()),
-        );
+        let compiler = Compiler::new(opts, GrammarBuilder::new(None, ParserLimits::default()));
         let quoted = compiler.quote_string(RegexAst::EmptyString);
         match &quoted {
             RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '"'),
@@ -1329,10 +1322,7 @@ mod tests {
             python_quote_style: PythonQuoteStyle::Single,
             ..Default::default()
         };
-        let compiler = Compiler::new(
-            opts,
-            GrammarBuilder::new(None, ParserLimits::default()),
-        );
+        let compiler = Compiler::new(opts, GrammarBuilder::new(None, ParserLimits::default()));
         let quoted = compiler.quote_string(RegexAst::EmptyString);
         match &quoted {
             RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '\''),
@@ -1347,14 +1337,15 @@ mod tests {
             python_quote_style: PythonQuoteStyle::Flexible,
             ..Default::default()
         };
-        let compiler = Compiler::new(
-            opts,
-            GrammarBuilder::new(None, ParserLimits::default()),
-        );
+        let compiler = Compiler::new(opts, GrammarBuilder::new(None, ParserLimits::default()));
         let quoted = compiler.quote_string(RegexAst::EmptyString);
         match quoted {
             RegexAst::Or(branches) => {
-                assert_eq!(branches.len(), 2, "expected 2 branches (single + double quote)");
+                assert_eq!(
+                    branches.len(),
+                    2,
+                    "expected 2 branches (single + double quote)"
+                );
                 match &branches[0] {
                     RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '\''),
                     other => panic!("expected StringEscape with single quote, got {:?}", other),
@@ -1375,10 +1366,7 @@ mod tests {
             python_quote_style: PythonQuoteStyle::Double,
             ..Default::default()
         };
-        let compiler = Compiler::new(
-            opts,
-            GrammarBuilder::new(None, ParserLimits::default()),
-        );
+        let compiler = Compiler::new(opts, GrammarBuilder::new(None, ParserLimits::default()));
         let quoted = compiler.quote_string(RegexAst::EmptyString);
         match &quoted {
             RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '"'),
@@ -1393,10 +1381,7 @@ mod tests {
             output_style: OutputStyle::Python,
             ..Default::default()
         };
-        let compiler = Compiler::new(
-            opts,
-            GrammarBuilder::new(None, ParserLimits::default()),
-        );
+        let compiler = Compiler::new(opts, GrammarBuilder::new(None, ParserLimits::default()));
 
         // Contains " but not ' → should use ' to avoid escaping (Q003)
         let quoted = compiler.python_quote(RegexAst::Literal("say \"hi\"".to_string()));
@@ -1416,7 +1401,10 @@ mod tests {
         let quoted = compiler.python_quote(RegexAst::Literal("it's a \"test\"".to_string()));
         match &quoted {
             RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '"'),
-            other => panic!("expected preferred quote for string with both, got {:?}", other),
+            other => panic!(
+                "expected preferred quote for string with both, got {:?}",
+                other
+            ),
         }
 
         // Contains neither → uses preferred (double by default)
