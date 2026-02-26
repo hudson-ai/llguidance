@@ -3,7 +3,7 @@ use crate::grammar_builder::GrammarResult;
 use crate::json::schema::{NumberSchema, StringSchema};
 use crate::{regex_to_lark, HashMap};
 use anyhow::{anyhow, bail, Context, Result};
-use derivre::{JsonQuoteOptions, RegexAst};
+use derivre::{JsonQuoteOptions, RegexAst, StringEscapeOptions, FallbackEscapeFormat, QuoteEscapeMethod};
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -745,7 +745,6 @@ impl Compiler {
             JsonQuoteOptions {
                 allowed_escapes,
                 raw_mode: false,
-                quote_char: '"',
             },
         )
     }
@@ -765,25 +764,42 @@ impl Compiler {
         }
     }
 
-    /// Wrap a regex AST in a single JsonQuote node with the given quote character.
+    /// Wrap a regex AST in a StringEscape node with the given quote character.
     fn python_quote_with(&self, ast: RegexAst, qc: char) -> RegexAst {
-        let mut escapes = self
+        let escapes_str = self
             .options
             .json_allowed_escapes
             .clone()
             .unwrap_or_else(|| "nrbtf\\u".to_string());
-        let qc_str = if qc == '\'' { '\'' } else { '"' };
-        if !escapes.contains(qc_str) {
-            escapes.push(qc_str);
-        }
-        RegexAst::JsonQuote(
-            Box::new(ast),
-            JsonQuoteOptions {
-                allowed_escapes: escapes,
-                raw_mode: false,
-                quote_char: qc,
-            },
-        )
+
+        let escape_map: &[(u8, u8, u8)] = &[
+            (b'b', 0x08, b'b'),
+            (b'f', 0x0C, b'f'),
+            (b'n', b'\n', b'n'),
+            (b'r', b'\r', b'r'),
+            (b't', b'\t', b't'),
+        ];
+        let single_char_escapes: Vec<(u8, u8)> = escape_map
+            .iter()
+            .filter(|(key, _, _)| escapes_str.as_bytes().contains(key))
+            .map(|(_, byte, esc)| (*byte, *esc))
+            .collect();
+
+        let fallback_escape = if escapes_str.contains('u') {
+            FallbackEscapeFormat::UnicodeXXXX
+        } else {
+            FallbackEscapeFormat::None
+        };
+
+        let opts = StringEscapeOptions {
+            single_char_escapes,
+            fallback_escape,
+            quote_char: qc,
+            quote_escape: QuoteEscapeMethod::Backslash,
+            must_escape: (0x00..=0x1Fu8).chain(std::iter::once(0x7Fu8)).collect(),
+            raw_mode: false,
+        };
+        RegexAst::StringEscape(Box::new(ast), opts)
     }
 
     fn python_quote(&self, ast: RegexAst) -> RegexAst {
@@ -1061,7 +1077,7 @@ fn always_non_empty(ast: &RegexAst) -> bool {
     match ast {
         RegexAst::Or(asts) => asts.iter().any(always_non_empty),
         RegexAst::Concat(asts) => asts.iter().all(always_non_empty),
-        RegexAst::Repeat(ast, _, _) | RegexAst::JsonQuote(ast, _) | RegexAst::LookAhead(ast) => {
+        RegexAst::Repeat(ast, _, _) | RegexAst::JsonQuote(ast, _) | RegexAst::StringEscape(ast, _) | RegexAst::LookAhead(ast) => {
             always_non_empty(ast)
         }
 
@@ -1290,7 +1306,7 @@ mod tests {
 
     #[test]
     fn python_quote_default_double() {
-        // Default PythonQuoteStyle::Double produces a single JsonQuote, not alternation
+        // Default PythonQuoteStyle::Double produces a single StringEscape, not alternation
         let opts = JsonCompileOptions {
             output_style: OutputStyle::Python,
             ..Default::default()
@@ -1301,8 +1317,8 @@ mod tests {
         );
         let quoted = compiler.quote_string(RegexAst::EmptyString);
         match &quoted {
-            RegexAst::JsonQuote(_, opts) => assert_eq!(opts.quote_char, '"'),
-            other => panic!("expected double JsonQuote, got {:?}", other),
+            RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '"'),
+            other => panic!("expected double StringEscape, got {:?}", other),
         }
     }
 
@@ -1319,8 +1335,8 @@ mod tests {
         );
         let quoted = compiler.quote_string(RegexAst::EmptyString);
         match &quoted {
-            RegexAst::JsonQuote(_, opts) => assert_eq!(opts.quote_char, '\''),
-            other => panic!("expected single JsonQuote, got {:?}", other),
+            RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '\''),
+            other => panic!("expected single StringEscape, got {:?}", other),
         }
     }
 
@@ -1340,12 +1356,12 @@ mod tests {
             RegexAst::Or(branches) => {
                 assert_eq!(branches.len(), 2, "expected 2 branches (single + double quote)");
                 match &branches[0] {
-                    RegexAst::JsonQuote(_, opts) => assert_eq!(opts.quote_char, '\''),
-                    other => panic!("expected JsonQuote with single quote, got {:?}", other),
+                    RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '\''),
+                    other => panic!("expected StringEscape with single quote, got {:?}", other),
                 }
                 match &branches[1] {
-                    RegexAst::JsonQuote(_, opts) => assert_eq!(opts.quote_char, '"'),
-                    other => panic!("expected JsonQuote with double quote, got {:?}", other),
+                    RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '"'),
+                    other => panic!("expected StringEscape with double quote, got {:?}", other),
                 }
             }
             other => panic!("expected Or alternation, got {:?}", other),
@@ -1365,8 +1381,8 @@ mod tests {
         );
         let quoted = compiler.quote_string(RegexAst::EmptyString);
         match &quoted {
-            RegexAst::JsonQuote(_, opts) => assert_eq!(opts.quote_char, '"'),
-            other => panic!("expected double JsonQuote, got {:?}", other),
+            RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '"'),
+            other => panic!("expected double StringEscape, got {:?}", other),
         }
     }
 
@@ -1385,28 +1401,28 @@ mod tests {
         // Contains " but not ' → should use ' to avoid escaping (Q003)
         let quoted = compiler.python_quote(RegexAst::Literal("say \"hi\"".to_string()));
         match &quoted {
-            RegexAst::JsonQuote(_, opts) => assert_eq!(opts.quote_char, '\''),
+            RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '\''),
             other => panic!("expected single-quoted for string with \", got {:?}", other),
         }
 
         // Contains ' but not " → should use " (preferred, no conflict)
         let quoted = compiler.python_quote(RegexAst::Literal("it's".to_string()));
         match &quoted {
-            RegexAst::JsonQuote(_, opts) => assert_eq!(opts.quote_char, '"'),
+            RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '"'),
             other => panic!("expected double-quoted for string with ', got {:?}", other),
         }
 
         // Contains both → uses preferred (double by default)
         let quoted = compiler.python_quote(RegexAst::Literal("it's a \"test\"".to_string()));
         match &quoted {
-            RegexAst::JsonQuote(_, opts) => assert_eq!(opts.quote_char, '"'),
+            RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '"'),
             other => panic!("expected preferred quote for string with both, got {:?}", other),
         }
 
         // Contains neither → uses preferred (double by default)
         let quoted = compiler.python_quote(RegexAst::Literal("hello".to_string()));
         match &quoted {
-            RegexAst::JsonQuote(_, opts) => assert_eq!(opts.quote_char, '"'),
+            RegexAst::StringEscape(_, opts) => assert_eq!(opts.quote_char, '"'),
             other => panic!("expected preferred quote for plain string, got {:?}", other),
         }
     }

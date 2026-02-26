@@ -36,7 +36,7 @@ debug = 1
 opt-level = 3
 
 [patch.crates-io]
-derivre = { git = "https://github.com/hudson-ai/derivre", rev = "00924cbdb2025ce24fb460ec3b3e911bf16fd0b3" }
+derivre = { git = "https://github.com/hudson-ai/derivre", rev = "6bb66d2182c5dbcf666a32b0ede8095b01db0ac9" }
 
 [workspace.dependencies]
 toktrie = { path = "toktrie" }
