@@ -244,17 +244,30 @@ typedef struct LlgTokenizerInit {
    * Pass NULL to use defaults. Pass empty array to disable.
    */
   const char *const *slices;
+} LlgTokenizerInit;
+
+/**
+ * V2 of the tokenizer initialization struct.
+ * Extends LlgTokenizerInit with support for multiple EOS tokens.
+ * Use with `llg_new_tokenizer_v2()`.
+ * This struct must also be zero-initialized before setting fields.
+ */
+typedef struct LlgTokenizerInitV2 {
   /**
-   * Additional EOS token IDs beyond `tok_eos`.
+   * All fields from the original LlgTokenizerInit.
+   */
+  struct LlgTokenizerInit base;
+  /**
+   * Additional EOS token IDs beyond `base.tok_eos`.
    * Points to an array of `tok_eos_extra_count` elements.
-   * When NULL (the default for zero-initialized structs), only `tok_eos` is used.
+   * When NULL (the default for zero-initialized structs), only `base.tok_eos` is used.
    */
   const LlgToken *tok_eos_extra;
   /**
    * Number of elements in the `tok_eos_extra` array.
    */
   uint32_t tok_eos_extra_count;
-} LlgTokenizerInit;
+} LlgTokenizerInitV2;
 
 
 
@@ -361,6 +374,14 @@ struct LlgConstraint *llg_clone_constraint(const struct LlgConstraint *cc);
 struct LlgTokenizer *llg_new_tokenizer(const struct LlgTokenizerInit *tok_init,
                                        char *error_string,
                                        size_t error_string_len);
+
+/**
+ * Create a new tokenizer from a LlgTokenizerInitV2 struct.
+ * This is the v2 API that supports multiple EOS tokens.
+ */
+struct LlgTokenizer *llg_new_tokenizer_v2(const struct LlgTokenizerInitV2 *tok_init,
+                                          char *error_string,
+                                          size_t error_string_len);
 
 /**
  * Clone a tokenizer.

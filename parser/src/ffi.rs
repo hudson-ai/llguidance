@@ -137,26 +137,48 @@ impl LlgTokenizer {
             token_bytes
         };
 
-        let mut trie = TokTrie::from(&TokRxInfo::new(tokens.len() as u32, init.tok_eos), &tokens);
+        let trie = TokTrie::from(&TokRxInfo::new(tokens.len() as u32, init.tok_eos), &tokens);
 
-        if !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
+        Self::finish_init(init, trie)
+    }
+
+    fn from_init_v2(init_v2: &LlgTokenizerInitV2) -> Result<Self> {
+        let init = &init_v2.base;
+        // Build the base tokenizer the same way as v1
+        let mut tok = Self::from_init(init)?;
+
+        // Apply additional EOS tokens if provided
+        if !init_v2.tok_eos_extra.is_null() && init_v2.tok_eos_extra_count > 0 {
             let extra = unsafe {
-                std::slice::from_raw_parts(init.tok_eos_extra, init.tok_eos_extra_count as usize)
+                std::slice::from_raw_parts(
+                    init_v2.tok_eos_extra,
+                    init_v2.tok_eos_extra_count as usize,
+                )
             };
             let mut eos_tokens = vec![init.tok_eos];
             eos_tokens.extend_from_slice(extra);
-            trie = trie.with_eos_tokens(&eos_tokens);
+
+            // Rebuild the factory with updated EOS tokens on the trie
+            let trie = tok.factory.tok_env().tok_trie().clone().with_eos_tokens(&eos_tokens);
+            let tok_env: TokEnv = Arc::new(CTokenizerInner {
+                trie,
+                tokenize_assumes_string: init.tokenize_assumes_string
+                    && init.tokenize_fn.is_some(),
+                tokenize_fn: init.tokenize_fn,
+                tokenize_user_data: init.tokenize_user_data,
+            });
+            let slices = Self::read_slices(init)?;
+            let factory =
+                ParserFactory::new(&tok_env, InferenceCapabilities::default(), &slices)?;
+            tok.factory = Arc::new(factory);
         }
 
-        let tok_env: TokEnv = Arc::new(CTokenizerInner {
-            trie,
-            tokenize_assumes_string: init.tokenize_assumes_string && init.tokenize_fn.is_some(),
-            tokenize_fn: init.tokenize_fn,
-            tokenize_user_data: init.tokenize_user_data,
-        });
+        Ok(tok)
+    }
 
-        let slices = if init.slices.is_null() {
-            SlicedBiasComputer::general_slices()
+    fn read_slices(init: &LlgTokenizerInit) -> Result<Vec<String>> {
+        if init.slices.is_null() {
+            Ok(SlicedBiasComputer::general_slices())
         } else {
             let mut slices = vec![];
             let mut idx = 0;
@@ -169,8 +191,19 @@ impl LlgTokenizer {
                 slices.push(s.to_string());
                 idx += 1;
             }
-            slices
-        };
+            Ok(slices)
+        }
+    }
+
+    fn finish_init(init: &LlgTokenizerInit, trie: TokTrie) -> Result<Self> {
+        let tok_env: TokEnv = Arc::new(CTokenizerInner {
+            trie,
+            tokenize_assumes_string: init.tokenize_assumes_string && init.tokenize_fn.is_some(),
+            tokenize_fn: init.tokenize_fn,
+            tokenize_user_data: init.tokenize_user_data,
+        });
+
+        let slices = Self::read_slices(init)?;
 
         let factory = ParserFactory::new(&tok_env, InferenceCapabilities::default(), &slices)?;
 
@@ -262,9 +295,20 @@ pub struct LlgTokenizerInit {
     /// Pass NULL to use defaults. Pass empty array to disable.
     pub slices: *const *const c_char,
 
-    /// Additional EOS token IDs beyond `tok_eos`.
+}
+
+/// V2 of the tokenizer initialization struct.
+/// Extends LlgTokenizerInit with support for multiple EOS tokens.
+/// Use with `llg_new_tokenizer_v2()`.
+/// This struct must also be zero-initialized before setting fields.
+#[repr(C)]
+pub struct LlgTokenizerInitV2 {
+    /// All fields from the original LlgTokenizerInit.
+    pub base: LlgTokenizerInit,
+
+    /// Additional EOS token IDs beyond `base.tok_eos`.
     /// Points to an array of `tok_eos_extra_count` elements.
-    /// When NULL (the default for zero-initialized structs), only `tok_eos` is used.
+    /// When NULL (the default for zero-initialized structs), only `base.tok_eos` is used.
     pub tok_eos_extra: *const LlgToken,
 
     /// Number of elements in the `tok_eos_extra` array.
@@ -681,6 +725,25 @@ pub unsafe extern "C" fn llg_new_tokenizer(
     error_string_len: usize,
 ) -> *mut LlgTokenizer {
     match LlgTokenizer::from_init(tok_init) {
+        Ok(tok) => Box::into_raw(Box::new(tok)),
+        Err(e) => {
+            save_error_string(e, error_string, error_string_len);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Create a new tokenizer from a LlgTokenizerInitV2 struct.
+/// This is the v2 API that supports multiple EOS tokens.
+/// # Safety
+/// This function should only be called from C code.
+#[no_mangle]
+pub unsafe extern "C" fn llg_new_tokenizer_v2(
+    tok_init: &LlgTokenizerInitV2,
+    error_string: *mut c_char,
+    error_string_len: usize,
+) -> *mut LlgTokenizer {
+    match LlgTokenizer::from_init_v2(tok_init) {
         Ok(tok) => Box::into_raw(Box::new(tok)),
         Err(e) => {
             save_error_string(e, error_string, error_string_len);
