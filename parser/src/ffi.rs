@@ -137,7 +137,15 @@ impl LlgTokenizer {
             token_bytes
         };
 
-        let trie = TokTrie::from(&TokRxInfo::new(tokens.len() as u32, init.tok_eos), &tokens);
+        let mut trie = TokTrie::from(&TokRxInfo::new(tokens.len() as u32, init.tok_eos), &tokens);
+
+        if !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
+            let extra =
+                unsafe { std::slice::from_raw_parts(init.tok_eos_extra, init.tok_eos_extra_count as usize) };
+            let mut eos_tokens = vec![init.tok_eos];
+            eos_tokens.extend_from_slice(extra);
+            trie = trie.with_eos_tokens(&eos_tokens);
+        }
 
         let tok_env: TokEnv = Arc::new(CTokenizerInner {
             trie,
@@ -249,6 +257,14 @@ pub struct LlgTokenizerInit {
     /// This is array of pointers to strings, terminated with NULL (argv style).
     /// Pass NULL to use defaults. Pass empty array to disable.
     pub slices: *const *const c_char,
+
+    /// Additional EOS token IDs beyond `tok_eos`.
+    /// Points to an array of `tok_eos_extra_count` elements.
+    /// When NULL (the default for zero-initialized structs), only `tok_eos` is used.
+    pub tok_eos_extra: *const LlgToken,
+
+    /// Number of elements in the `tok_eos_extra` array.
+    pub tok_eos_extra_count: u32,
 }
 
 #[derive(Clone)]

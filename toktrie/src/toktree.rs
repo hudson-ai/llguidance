@@ -101,6 +101,7 @@ pub struct TokTrie {
     token_data: Vec<u8>,
     nodes: Vec<TrieNode>,
     max_token_len: usize,
+    eos_tokens: Vec<TokenId>,
 }
 
 #[derive(Clone, Copy, Zeroable, Pod)]
@@ -194,6 +195,7 @@ impl TokTrie {
             token_data,
             nodes,
             max_token_len,
+            eos_tokens: vec![info.tok_eos],
         };
         r.validate();
         r
@@ -209,19 +211,27 @@ impl TokTrie {
             };
             words.push(b.to_vec());
         }
-        Self::from(self.info(), &words)
+        let mut r = Self::from(self.info(), &words);
+        r.eos_tokens = self.eos_tokens.clone();
+        r
     }
 
     pub fn with_eos_token(&self, eos_token: TokenId) -> Self {
-        self.with_info(TokRxInfo {
-            tok_eos: eos_token,
-            ..self.info
-        })
+        self.with_eos_tokens(&[eos_token])
+    }
+
+    pub fn with_eos_tokens(&self, eos_tokens: &[TokenId]) -> Self {
+        assert!(!eos_tokens.is_empty(), "eos_tokens must not be empty");
+        let mut r = self.clone();
+        r.info.tok_eos = eos_tokens[0];
+        r.eos_tokens = eos_tokens.to_vec();
+        r
     }
 
     pub fn with_info(&self, info: TokRxInfo) -> Self {
         let mut r = self.clone();
         r.info = info;
+        r.eos_tokens = vec![info.tok_eos];
         r
     }
 
@@ -246,6 +256,10 @@ impl TokTrie {
 
     pub fn eos_token(&self) -> TokenId {
         self.info.tok_eos
+    }
+
+    pub fn eos_tokens(&self) -> &[TokenId] {
+        &self.eos_tokens
     }
 
     pub fn vocab_size(&self) -> usize {
@@ -1187,5 +1201,68 @@ impl Recognizer for AnythingGoes {
     fn pop_bytes(&mut self, _num: usize) {}
     fn try_push_byte(&mut self, _byte: u8) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_trie(eos: TokenId) -> TokTrie {
+        let info = TokRxInfo::new(4, eos);
+        let words = vec![
+            b"a".to_vec(),
+            b"b".to_vec(),
+            b"c".to_vec(),
+            b"d".to_vec(),
+        ];
+        TokTrie::from(&info, &words)
+    }
+
+    #[test]
+    fn test_default_single_eos() {
+        let trie = make_test_trie(2);
+        assert_eq!(trie.eos_token(), 2);
+        assert_eq!(trie.eos_tokens(), &[2]);
+    }
+
+    #[test]
+    fn test_with_eos_tokens_multiple() {
+        let trie = make_test_trie(0).with_eos_tokens(&[1, 3]);
+        assert_eq!(trie.eos_token(), 1);
+        assert_eq!(trie.eos_tokens(), &[1, 3]);
+        assert_eq!(trie.info().tok_eos, 1);
+    }
+
+    #[test]
+    fn test_with_eos_token_backwards_compat() {
+        let trie = make_test_trie(0).with_eos_token(2);
+        assert_eq!(trie.eos_token(), 2);
+        assert_eq!(trie.eos_tokens(), &[2]);
+    }
+
+    #[test]
+    fn test_with_info_resets_eos_tokens() {
+        let trie = make_test_trie(0).with_eos_tokens(&[1, 2]);
+        let trie2 = trie.with_info(TokRxInfo::new(4, 3));
+        assert_eq!(trie2.eos_token(), 3);
+        assert_eq!(trie2.eos_tokens(), &[3]);
+    }
+
+    #[test]
+    fn test_filter_preserves_eos_tokens() {
+        let trie = make_test_trie(0).with_eos_tokens(&[1, 2]);
+        let mut filter = trie.alloc_token_set();
+        for i in 0..4 {
+            filter.allow_token(i);
+        }
+        let filtered = trie.filter(&filter);
+        assert_eq!(filtered.eos_tokens(), &[1, 2]);
+    }
+
+    #[test]
+    #[should_panic(expected = "eos_tokens must not be empty")]
+    fn test_with_eos_tokens_empty_panics() {
+        make_test_trie(0).with_eos_tokens(&[]);
     }
 }

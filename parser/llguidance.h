@@ -239,6 +239,16 @@ typedef struct LlgTokenizerInit {
    * Pass NULL to use defaults. Pass empty array to disable.
    */
   const char *const *slices;
+  /**
+   * Additional EOS token IDs beyond `tok_eos`.
+   * Points to an array of `tok_eos_extra_count` elements.
+   * When NULL (the default for zero-initialized structs), only `tok_eos` is used.
+   */
+  const LlgToken *tok_eos_extra;
+  /**
+   * Number of elements in the `tok_eos_extra` array.
+   */
+  uint32_t tok_eos_extra_count;
 } LlgTokenizerInit;
 
 

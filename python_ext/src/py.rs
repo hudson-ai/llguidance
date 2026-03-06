@@ -16,6 +16,23 @@ use toktrie_tiktoken::TikTokenBPE;
 
 use crate::llamatokenizer::tokenv_from_llamacpp;
 
+/// Extract eos_token from a Python value that may be int or list[int].
+/// Returns None if the value is None, or Some(vec) if it's an int or list of ints.
+fn extract_eos_tokens(obj: &Bound<'_, PyAny>) -> PyResult<Vec<u32>> {
+    if let Ok(single) = obj.extract::<u32>() {
+        Ok(vec![single])
+    } else if let Ok(list) = obj.extract::<Vec<u32>>() {
+        if list.is_empty() {
+            return Err(PyValueError::new_err("eos_token list must not be empty"));
+        }
+        Ok(list)
+    } else {
+        Err(PyValueError::new_err(
+            "eos_token must be an int or a non-empty list of ints",
+        ))
+    }
+}
+
 struct PyTokenizer {
     tok_trie: Arc<toktrie::TokTrie>,
     tokenizer_fun: Py<PyAny>,
@@ -36,9 +53,13 @@ impl LLTokenizer {
     fn py_new(
         tokenizer: Bound<'_, PyAny>,
         n_vocab: Option<usize>,
-        eos_token: Option<u32>,
+        eos_token: Option<Bound<'_, PyAny>>,
         slices: Option<Vec<String>>,
     ) -> PyResult<Self> {
+        let eos_tokens = eos_token
+            .as_ref()
+            .map(extract_eos_tokens)
+            .transpose()?;
         let tok_env: TokEnv = if let Ok(tokenizer_str) = tokenizer.extract::<String>() {
             if tokenizer_str == "byte" {
                 ApproximateTokEnv::single_byte_env()
@@ -48,8 +69,8 @@ impl LLTokenizer {
                 } else {
                     ByteTokenizer::from_file(&tokenizer_str).map_err(val_error)?
                 };
-                if let Some(eos_token) = eos_token {
-                    tok.set_eos_token(eos_token);
+                if let Some(ref eos_tokens) = eos_tokens {
+                    tok.set_eos_tokens(eos_tokens);
                 }
                 tok.into_tok_env(n_vocab).map_err(val_error)?
             }
@@ -77,18 +98,22 @@ impl LLTokenizer {
         encoder: HashMap<Vec<u8>, u32>,
         special_tokens: HashMap<String, u32>,
         pattern: &str,
-        eos_token: u32,
+        eos_token: Bound<'_, PyAny>,
         n_vocab: Option<usize>,
         slices: Option<Vec<String>>,
     ) -> PyResult<Self> {
-        let bpe = TikTokenBPE::new(
+        let eos_tokens = extract_eos_tokens(&eos_token)?;
+        let mut bpe = TikTokenBPE::new(
             encoder.into_iter().collect(),
             special_tokens.into_iter().collect(),
             pattern,
             n_vocab,
-            eos_token,
+            eos_tokens[0],
         )
         .map_err(val_error)?;
+        if eos_tokens.len() > 1 {
+            bpe.set_eos_tokens(&eos_tokens);
+        }
         let tok_env = bpe.to_env();
 
         let factory = ParserFactory::new(
@@ -108,11 +133,12 @@ impl LLTokenizer {
         tokens: Vec<Vec<u8>>,
         vocab_ptr: usize,
         tokenize_fptr: usize,
-        eos_token: u32,
+        eos_token: Bound<'_, PyAny>,
         slices: Option<Vec<String>>,
     ) -> PyResult<Self> {
+        let eos_tokens = extract_eos_tokens(&eos_token)?;
         let tok_env =
-            tokenv_from_llamacpp(tokens, vocab_ptr, tokenize_fptr, eos_token).map_err(val_error)?;
+            tokenv_from_llamacpp(tokens, vocab_ptr, tokenize_fptr, &eos_tokens).map_err(val_error)?;
 
         let factory = ParserFactory::new(
             &tok_env,
@@ -243,6 +269,11 @@ impl LLTokenizer {
     #[getter]
     fn eos_token(&self) -> u32 {
         self.tok_trie().eos_token()
+    }
+
+    #[getter]
+    fn eos_tokens(&self) -> Vec<u32> {
+        self.tok_trie().eos_tokens().to_vec()
     }
 }
 
