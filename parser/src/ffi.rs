@@ -142,7 +142,10 @@ impl LlgTokenizer {
             token_bytes
         };
 
-        Ok(TokTrie::from(&TokRxInfo::new(tokens.len() as u32, init.tok_eos), &tokens))
+        Ok(TokTrie::from(
+            &TokRxInfo::new(tokens.len() as u32, init.tok_eos),
+            &tokens,
+        ))
     }
 
     fn from_init_v2(init: &LlgTokenizerInitV2) -> Result<Self> {
