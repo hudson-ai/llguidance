@@ -143,20 +143,14 @@ impl LlgTokenizer {
     }
 
     fn from_init_v2(init: &LlgTokenizerInitV2) -> Result<Self> {
-        // The minimum struct_size is the base fields through slices (same as
-        // LlgTokenizerInit + the leading struct_size field). Fields appended
-        // after slices are only read when struct_size indicates they're present.
-        let base_size = std::mem::offset_of!(LlgTokenizerInitV2, tok_eos_extra);
+        let expected_size = std::mem::size_of::<LlgTokenizerInitV2>();
         ensure!(
-            init.struct_size >= base_size,
+            init.struct_size >= expected_size,
             "LlgTokenizerInitV2.struct_size is {} but expected at least {}. \
              Set struct_size = sizeof(LlgTokenizerInitV2).",
             init.struct_size,
-            base_size
+            expected_size
         );
-
-        let has_eos_extra =
-            init.struct_size >= std::mem::size_of::<LlgTokenizerInitV2>();
 
         // Build a v1 init from the shared fields and delegate
         let v1 = LlgTokenizerInit {
@@ -173,13 +167,21 @@ impl LlgTokenizer {
         };
         let mut tok = Self::from_init(&v1)?;
 
-        // Apply additional EOS tokens if the struct is large enough to contain them
-        if has_eos_extra && !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
+        // Apply additional EOS tokens if provided
+        if !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
             let extra = unsafe {
                 std::slice::from_raw_parts(init.tok_eos_extra, init.tok_eos_extra_count as usize)
             };
             let mut eos_tokens = vec![init.tok_eos];
             eos_tokens.extend_from_slice(extra);
+
+            let vocab_size = tok.factory.tok_env().tok_trie().vocab_size() as u32;
+            for &id in &eos_tokens {
+                ensure!(
+                    id < vocab_size,
+                    "EOS token ID {id} is out of range (vocab_size={vocab_size})"
+                );
+            }
 
             let trie = tok
                 .factory
@@ -326,14 +328,14 @@ pub struct LlgTokenizerInit {
 /// Use with `llg_new_tokenizer_v2()`.
 ///
 /// Initialize with: `LlgTokenizerInitV2 init = {}; init.struct_size = sizeof(init);`
-/// The struct_size field allows future fields to be appended without breaking
-/// existing callers — new fields will default to zero when struct_size is smaller
-/// than the library expects.
+/// The struct_size field is reserved for forward compatibility: future library
+/// versions will accept older (smaller) struct sizes and default new fields to zero.
+/// Currently, struct_size must equal `sizeof(LlgTokenizerInitV2)`.
 #[repr(C)]
 pub struct LlgTokenizerInitV2 {
     /// Must be set to `sizeof(LlgTokenizerInitV2)`.
-    /// The library uses this to determine which fields are present, allowing
-    /// older callers (with a smaller struct) to work with newer library versions.
+    /// Reserved for forward compatibility: future library versions will use this
+    /// to detect which fields are present when new fields are appended.
     pub struct_size: usize,
 
     /// The number of tokens in the vocabulary

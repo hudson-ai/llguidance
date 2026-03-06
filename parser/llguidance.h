@@ -252,15 +252,15 @@ typedef struct LlgTokenizerInit {
  * Use with `llg_new_tokenizer_v2()`.
  *
  * Initialize with: `LlgTokenizerInitV2 init = {}; init.struct_size = sizeof(init);`
- * The struct_size field allows future fields to be appended without breaking
- * existing callers — new fields will default to zero when struct_size is smaller
- * than the library expects.
+ * The struct_size field is reserved for forward compatibility: future library
+ * versions will accept older (smaller) struct sizes and default new fields to zero.
+ * Currently, struct_size must equal `sizeof(LlgTokenizerInitV2)`.
  */
 typedef struct LlgTokenizerInitV2 {
   /**
    * Must be set to `sizeof(LlgTokenizerInitV2)`.
-   * The library uses this to determine which fields are present, allowing
-   * older callers (with a smaller struct) to work with newer library versions.
+   * Reserved for forward compatibility: future library versions will use this
+   * to detect which fields are present when new fields are appended.
    */
   size_t struct_size;
   /**
