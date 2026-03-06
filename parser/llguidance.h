@@ -250,9 +250,18 @@ typedef struct LlgTokenizerInit {
  * V2 of the tokenizer initialization struct.
  * Extends LlgTokenizerInit with support for multiple EOS tokens.
  * Use with `llg_new_tokenizer_v2()`.
- * This struct must also be zero-initialized before setting fields.
+ *
+ * Initialize with: `LlgTokenizerInitV2 init = {}; init.struct_size = sizeof(init);`
+ * The struct_size field allows future fields to be appended without breaking
+ * existing callers — new fields will default to zero when struct_size is smaller
+ * than the library expects.
  */
 typedef struct LlgTokenizerInitV2 {
+  /**
+   * Must be set to `sizeof(LlgTokenizerInitV2)`.
+   * This allows the library to detect which fields are available.
+   */
+  size_t struct_size;
   /**
    * All fields from the original LlgTokenizerInit.
    */

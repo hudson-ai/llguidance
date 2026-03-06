@@ -143,6 +143,15 @@ impl LlgTokenizer {
     }
 
     fn from_init_v2(init_v2: &LlgTokenizerInitV2) -> Result<Self> {
+        let min_size = std::mem::size_of::<LlgTokenizerInitV2>();
+        ensure!(
+            init_v2.struct_size >= min_size,
+            "LlgTokenizerInitV2.struct_size is {} but expected at least {}. \
+             Set struct_size = sizeof(LlgTokenizerInitV2).",
+            init_v2.struct_size,
+            min_size
+        );
+
         let init = &init_v2.base;
         // Build the base tokenizer the same way as v1
         let mut tok = Self::from_init(init)?;
@@ -300,9 +309,17 @@ pub struct LlgTokenizerInit {
 /// V2 of the tokenizer initialization struct.
 /// Extends LlgTokenizerInit with support for multiple EOS tokens.
 /// Use with `llg_new_tokenizer_v2()`.
-/// This struct must also be zero-initialized before setting fields.
+///
+/// Initialize with: `LlgTokenizerInitV2 init = {}; init.struct_size = sizeof(init);`
+/// The struct_size field allows future fields to be appended without breaking
+/// existing callers — new fields will default to zero when struct_size is smaller
+/// than the library expects.
 #[repr(C)]
 pub struct LlgTokenizerInitV2 {
+    /// Must be set to `sizeof(LlgTokenizerInitV2)`.
+    /// This allows the library to detect which fields are available.
+    pub struct_size: usize,
+
     /// All fields from the original LlgTokenizerInit.
     pub base: LlgTokenizerInit,
 

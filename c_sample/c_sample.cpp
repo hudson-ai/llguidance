@@ -37,6 +37,7 @@ LlgTokenizer *create_tokenizer(std::vector<std::vector<uint8_t>> &tokens,
 
   // For models with multiple EOS tokens (e.g., Qwen3), use the v2 API:
   //   LlgTokenizerInitV2 tok_init_v2 = {};
+  //   tok_init_v2.struct_size = sizeof(tok_init_v2);
   //   tok_init_v2.base = tok_init;  // copy base fields
   //   LlgToken extra_eos[] = {second_eos, third_eos};
   //   tok_init_v2.tok_eos_extra = extra_eos;
