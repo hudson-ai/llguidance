@@ -74,8 +74,7 @@ impl LLTokenizer {
         } else {
             let mut py_tok = PyTokenizer::py_new(tokenizer)?;
             if let Some(ref eos_tokens) = eos_tokens {
-                py_tok.tok_trie =
-                    Arc::new(py_tok.tok_trie.with_eos_tokens(eos_tokens));
+                py_tok.tok_trie = Arc::new(py_tok.tok_trie.with_eos_tokens(eos_tokens));
             }
             Arc::new(py_tok)
         };
