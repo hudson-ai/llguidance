@@ -16,8 +16,8 @@ use toktrie_tiktoken::TikTokenBPE;
 
 use crate::llamatokenizer::tokenv_from_llamacpp;
 
-/// Extract eos_token from a Python value that may be int or list[int].
-/// Returns None if the value is None, or Some(vec) if it's an int or list of ints.
+/// Extract EOS tokens from a Python value that must be an int or a non-empty list[int].
+/// Returns a Vec<u32> on success, or raises PyValueError if the value is invalid or the list is empty.
 fn extract_eos_tokens(obj: &Bound<'_, PyAny>) -> PyResult<Vec<u32>> {
     if let Ok(single) = obj.extract::<u32>() {
         Ok(vec![single])
