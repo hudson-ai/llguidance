@@ -823,8 +823,7 @@ pub unsafe extern "C" fn llg_new_tokenizer_v2(
 
     // Read struct_size from the first field (always safe if pointer is valid)
     let struct_size = unsafe { std::ptr::read(tok_init as *const usize) };
-    let min_size =
-        std::mem::offset_of!(LlgTokenizerInitV2, tok_eos) + std::mem::size_of::<LlgToken>();
+    let min_size = std::mem::offset_of!(LlgTokenizerInitV2, token_lens);
     if struct_size < min_size {
         save_error_string(
             anyhow::anyhow!(
