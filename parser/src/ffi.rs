@@ -143,14 +143,6 @@ impl LlgTokenizer {
     }
 
     fn from_init_v2(init: &LlgTokenizerInitV2) -> Result<Self> {
-        let expected_size = std::mem::size_of::<LlgTokenizerInitV2>();
-        ensure!(
-            init.struct_size >= expected_size,
-            "LlgTokenizerInitV2.struct_size is {} but expected at least {}. \
-             Set struct_size = sizeof(LlgTokenizerInitV2).",
-            init.struct_size,
-            expected_size
-        );
 
         // Build a v1 init from the shared fields and delegate
         let v1 = LlgTokenizerInit {
@@ -328,14 +320,14 @@ pub struct LlgTokenizerInit {
 /// Use with `llg_new_tokenizer_v2()`.
 ///
 /// Initialize with: `LlgTokenizerInitV2 init = {}; init.struct_size = sizeof(init);`
-/// The struct_size field is reserved for forward compatibility: future library
-/// versions will accept older (smaller) struct sizes and default new fields to zero.
-/// Currently, struct_size must equal `sizeof(LlgTokenizerInitV2)`.
+/// The library only reads `struct_size` bytes from the pointer, so callers
+/// compiled against an older header (with a smaller struct) will work with
+/// newer library versions — any new fields default to zero.
 #[repr(C)]
 pub struct LlgTokenizerInitV2 {
     /// Must be set to `sizeof(LlgTokenizerInitV2)`.
-    /// Reserved for forward compatibility: future library versions will use this
-    /// to detect which fields are present when new fields are appended.
+    /// The library uses this to determine how many bytes to read, enabling
+    /// forward compatibility when new fields are appended in future versions.
     pub struct_size: usize,
 
     /// The number of tokens in the vocabulary
@@ -809,15 +801,57 @@ pub unsafe extern "C" fn llg_new_tokenizer(
 
 /// Create a new tokenizer from a LlgTokenizerInitV2 struct.
 /// This is the v2 API that supports multiple EOS tokens.
+///
+/// The `tok_init` pointer must be valid and `tok_init->struct_size` must be set
+/// to `sizeof(LlgTokenizerInitV2)` as known by the caller. The library will
+/// only read `struct_size` bytes, so callers compiled against an older (smaller)
+/// version of the struct will work with newer library versions — new fields
+/// default to zero.
+///
 /// # Safety
-/// This function should only be called from C code.
+/// `tok_init` must point to at least `tok_init->struct_size` bytes of
+/// initialized memory, and `struct_size` must be at least
+/// `offsetof(LlgTokenizerInitV2, tok_eos)` (i.e., include the struct_size
+/// field itself plus vocab_size).
 #[no_mangle]
 pub unsafe extern "C" fn llg_new_tokenizer_v2(
-    tok_init: &LlgTokenizerInitV2,
+    tok_init: *const LlgTokenizerInitV2,
     error_string: *mut c_char,
     error_string_len: usize,
 ) -> *mut LlgTokenizer {
-    match LlgTokenizer::from_init_v2(tok_init) {
+    if tok_init.is_null() {
+        save_error_string(
+            anyhow::anyhow!("tok_init is NULL"),
+            error_string,
+            error_string_len,
+        );
+        return std::ptr::null_mut();
+    }
+
+    // Read struct_size from the first field (always safe if pointer is valid)
+    let struct_size = unsafe { std::ptr::read(tok_init as *const usize) };
+    let min_size = std::mem::offset_of!(LlgTokenizerInitV2, tok_eos);
+    if struct_size < min_size {
+        save_error_string(
+            anyhow::anyhow!(
+                "LlgTokenizerInitV2.struct_size is {struct_size} but expected at least {min_size}. \
+                 Set struct_size = sizeof(LlgTokenizerInitV2)."
+            ),
+            error_string,
+            error_string_len,
+        );
+        return std::ptr::null_mut();
+    }
+
+    // Copy the caller's data into a zero-initialized local struct.
+    // Fields beyond what the caller provides default to zero.
+    let mut local: LlgTokenizerInitV2 = unsafe { std::mem::zeroed() };
+    let copy_size = std::cmp::min(struct_size, std::mem::size_of::<LlgTokenizerInitV2>());
+    unsafe {
+        std::ptr::copy_nonoverlapping(tok_init as *const u8, &mut local as *mut LlgTokenizerInitV2 as *mut u8, copy_size);
+    }
+
+    match LlgTokenizer::from_init_v2(&local) {
         Ok(tok) => Box::into_raw(Box::new(tok)),
         Err(e) => {
             save_error_string(e, error_string, error_string_len);

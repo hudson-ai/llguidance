@@ -252,15 +252,15 @@ typedef struct LlgTokenizerInit {
  * Use with `llg_new_tokenizer_v2()`.
  *
  * Initialize with: `LlgTokenizerInitV2 init = {}; init.struct_size = sizeof(init);`
- * The struct_size field is reserved for forward compatibility: future library
- * versions will accept older (smaller) struct sizes and default new fields to zero.
- * Currently, struct_size must equal `sizeof(LlgTokenizerInitV2)`.
+ * The library only reads `struct_size` bytes from the pointer, so callers
+ * compiled against an older header (with a smaller struct) will work with
+ * newer library versions — any new fields default to zero.
  */
 typedef struct LlgTokenizerInitV2 {
   /**
    * Must be set to `sizeof(LlgTokenizerInitV2)`.
-   * Reserved for forward compatibility: future library versions will use this
-   * to detect which fields are present when new fields are appended.
+   * The library uses this to determine how many bytes to read, enabling
+   * forward compatibility when new fields are appended in future versions.
    */
   size_t struct_size;
   /**
@@ -436,6 +436,17 @@ struct LlgTokenizer *llg_new_tokenizer(const struct LlgTokenizerInit *tok_init,
 /**
  * Create a new tokenizer from a LlgTokenizerInitV2 struct.
  * This is the v2 API that supports multiple EOS tokens.
+ *
+ * The `tok_init` pointer must be valid and `tok_init->struct_size` must be set
+ * to `sizeof(LlgTokenizerInitV2)` as known by the caller. The library will
+ * only read `struct_size` bytes, so callers compiled against an older (smaller)
+ * version of the struct will work with newer library versions — new fields
+ * default to zero.
+ *
+ * `tok_init` must point to at least `tok_init->struct_size` bytes of
+ * initialized memory, and `struct_size` must be at least
+ * `offsetof(LlgTokenizerInitV2, tok_eos)` (i.e., include the struct_size
+ * field itself plus vocab_size).
  */
 struct LlgTokenizer *llg_new_tokenizer_v2(const struct LlgTokenizerInitV2 *tok_init,
                                           char *error_string,
