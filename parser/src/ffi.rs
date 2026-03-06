@@ -100,6 +100,11 @@ unsafe fn slice_from_ptr_or_empty<'a, T>(data: *const T, len: usize) -> &'a [T] 
 
 impl LlgTokenizer {
     fn from_init(init: &LlgTokenizerInit) -> Result<Self> {
+        let trie = Self::build_trie(init)?;
+        Self::finish_init(init, trie)
+    }
+
+    fn build_trie(init: &LlgTokenizerInit) -> Result<TokTrie> {
         ensure!(
             init.tokenize_fn.is_some() || init.use_approximate_greedy_tokenize_fn,
             "Either tokenize_fn or use_approximate_greedy_tokenize_fn must be set"
@@ -137,9 +142,7 @@ impl LlgTokenizer {
             token_bytes
         };
 
-        let trie = TokTrie::from(&TokRxInfo::new(tokens.len() as u32, init.tok_eos), &tokens);
-
-        Self::finish_init(init, trie)
+        Ok(TokTrie::from(&TokRxInfo::new(tokens.len() as u32, init.tok_eos), &tokens))
     }
 
     fn from_init_v2(init: &LlgTokenizerInitV2) -> Result<Self> {
@@ -156,7 +159,9 @@ impl LlgTokenizer {
             tokenize_user_data: init.tokenize_user_data,
             slices: init.slices,
         };
-        let mut tok = Self::from_init(&v1)?;
+
+        // Build the trie via the v1 path
+        let mut trie = Self::build_trie(&v1)?;
 
         // Apply additional EOS tokens if provided
         if !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
@@ -166,7 +171,7 @@ impl LlgTokenizer {
             let mut eos_tokens = vec![init.tok_eos];
             eos_tokens.extend_from_slice(extra);
 
-            let vocab_size = tok.factory.tok_env().tok_trie().vocab_size() as u32;
+            let vocab_size = trie.vocab_size() as u32;
             for &id in &eos_tokens {
                 ensure!(
                     id < vocab_size,
@@ -174,24 +179,10 @@ impl LlgTokenizer {
                 );
             }
 
-            let trie = tok
-                .factory
-                .tok_env()
-                .tok_trie()
-                .clone()
-                .with_eos_tokens(&eos_tokens);
-            let tok_env: TokEnv = Arc::new(CTokenizerInner {
-                trie,
-                tokenize_assumes_string: init.tokenize_assumes_string && init.tokenize_fn.is_some(),
-                tokenize_fn: init.tokenize_fn,
-                tokenize_user_data: init.tokenize_user_data,
-            });
-            let slices = Self::read_slices_raw(init.slices)?;
-            let factory = ParserFactory::new(&tok_env, InferenceCapabilities::default(), &slices)?;
-            tok.factory = Arc::new(factory);
+            trie = trie.with_eos_tokens(&eos_tokens);
         }
 
-        Ok(tok)
+        Self::finish_init(&v1, trie)
     }
 
     fn read_slices_raw(slices: *const *const c_char) -> Result<Vec<String>> {
