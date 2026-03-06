@@ -283,6 +283,15 @@ impl TokTrie {
         r
     }
 
+    /// Returns a token set containing all EOS tokens.
+    pub fn eos_token_set(&self) -> SimpleVob {
+        let mut r = self.alloc_token_set();
+        for &eos in self.eos_tokens() {
+            r.allow_token(eos);
+        }
+        r
+    }
+
     pub fn token_set_dbg(&self, ts: &SimpleVob) -> String {
         let max_examples = 50;
 
