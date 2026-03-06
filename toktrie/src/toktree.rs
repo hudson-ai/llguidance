@@ -286,8 +286,11 @@ impl TokTrie {
     /// Returns a token set containing all EOS tokens.
     pub fn eos_token_set(&self) -> SimpleVob {
         let mut r = self.alloc_token_set();
+        let vocab = self.vocab_size() as u32;
         for &eos in self.eos_tokens() {
-            r.allow_token(eos);
+            if eos != INVALID_TOKEN && eos < vocab {
+                r.allow_token(eos);
+            }
         }
         r
     }
