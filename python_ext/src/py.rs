@@ -33,6 +33,18 @@ fn extract_eos_tokens(obj: &Bound<'_, PyAny>) -> PyResult<Vec<u32>> {
     }
 }
 
+/// Validate that all EOS token IDs are within vocab range.
+fn validate_eos_tokens(eos_tokens: &[u32], vocab_size: u32) -> PyResult<()> {
+    for &id in eos_tokens {
+        if id >= vocab_size {
+            return Err(PyValueError::new_err(format!(
+                "EOS token ID {id} is out of range (vocab_size={vocab_size})"
+            )));
+        }
+    }
+    Ok(())
+}
+
 struct PyTokenizer {
     tok_trie: Arc<toktrie::TokTrie>,
     tokenizer_fun: Py<PyAny>,
@@ -67,6 +79,7 @@ impl LLTokenizer {
                     ByteTokenizer::from_file(&tokenizer_str).map_err(val_error)?
                 };
                 if let Some(ref eos_tokens) = eos_tokens {
+                    validate_eos_tokens(eos_tokens, tok.tokrx_info().vocab_size)?;
                     tok.set_eos_tokens(eos_tokens);
                 }
                 tok.into_tok_env(n_vocab).map_err(val_error)?
@@ -74,6 +87,7 @@ impl LLTokenizer {
         } else {
             let mut py_tok = PyTokenizer::py_new(tokenizer)?;
             if let Some(ref eos_tokens) = eos_tokens {
+                validate_eos_tokens(eos_tokens, py_tok.tok_trie.vocab_size() as u32)?;
                 py_tok.tok_trie = Arc::new(py_tok.tok_trie.with_eos_tokens(eos_tokens));
             }
             Arc::new(py_tok)
@@ -113,6 +127,7 @@ impl LLTokenizer {
         )
         .map_err(val_error)?;
         if eos_tokens.len() > 1 {
+            validate_eos_tokens(&eos_tokens, bpe.tokrx_info().vocab_size)?;
             bpe.set_eos_tokens(&eos_tokens);
         }
         let tok_env = bpe.to_env();

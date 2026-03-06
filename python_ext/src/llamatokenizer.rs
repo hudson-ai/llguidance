@@ -125,6 +125,14 @@ pub fn tokenv_from_llamacpp(
     ensure!(vocab_ptr != 0, "vocab_ptr must be non-null");
     ensure!(tokenize_fptr != 0, "tokenize_fptr must be non-null");
 
+    let vocab_size = tokens.len() as u32;
+    for &id in eos_tokens {
+        ensure!(
+            id < vocab_size,
+            "EOS token ID {id} is out of range (vocab_size={vocab_size})"
+        );
+    }
+
     let info = TokRxInfo::new(tokens.len() as u32, eos_tokens[0]);
     let mut trie = TokTrie::from(&info, &tokens);
     if eos_tokens.len() > 1 {
