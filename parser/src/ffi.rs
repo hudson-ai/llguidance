@@ -143,7 +143,6 @@ impl LlgTokenizer {
     }
 
     fn from_init_v2(init: &LlgTokenizerInitV2) -> Result<Self> {
-
         // Build a v1 init from the shared fields and delegate
         let v1 = LlgTokenizerInit {
             vocab_size: init.vocab_size,
@@ -848,7 +847,11 @@ pub unsafe extern "C" fn llg_new_tokenizer_v2(
     let mut local: LlgTokenizerInitV2 = unsafe { std::mem::zeroed() };
     let copy_size = std::cmp::min(struct_size, std::mem::size_of::<LlgTokenizerInitV2>());
     unsafe {
-        std::ptr::copy_nonoverlapping(tok_init as *const u8, &mut local as *mut LlgTokenizerInitV2 as *mut u8, copy_size);
+        std::ptr::copy_nonoverlapping(
+            tok_init as *const u8,
+            &mut local as *mut LlgTokenizerInitV2 as *mut u8,
+            copy_size,
+        );
     }
 
     match LlgTokenizer::from_init_v2(&local) {
