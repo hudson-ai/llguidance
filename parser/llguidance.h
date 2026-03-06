@@ -186,6 +186,11 @@ typedef size_t (*LlgTokenizeFn)(const void *user_data,
                                 uint32_t *output_tokens,
                                 size_t output_tokens_len);
 
+/**
+ * This struct must be zero-initialized (e.g., `= {}` in C/C++) before setting fields.
+ * New fields may be appended in future versions, and zero-initialization ensures
+ * they receive safe default values.
+ */
 typedef struct LlgTokenizerInit {
   /**
    * The number of tokens in the vocabulary

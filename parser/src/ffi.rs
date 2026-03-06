@@ -215,6 +215,9 @@ pub type LlgTokenizeFn = Option<
 /// Function which llg calls when an operation is done.
 pub type LlgCallback = Option<extern "C" fn(user_data: *const c_void)>;
 
+/// This struct must be zero-initialized (e.g., `= {}` in C/C++) before setting fields.
+/// New fields may be appended in future versions, and zero-initialization ensures
+/// they receive safe default values.
 #[repr(C)]
 pub struct LlgTokenizerInit {
     /// The number of tokens in the vocabulary
