@@ -36,13 +36,17 @@ LlgTokenizer *create_tokenizer(std::vector<std::vector<uint8_t>> &tokens,
   tok_init.tokenize_fn = tokenize_fn;
 
   // For models with multiple EOS tokens (e.g., Qwen3), use the v2 API:
-  //   LlgTokenizerInitV2 tok_init_v2 = {};
-  //   tok_init_v2.struct_size = sizeof(tok_init_v2);
-  //   tok_init_v2.base = tok_init;  // copy base fields
+  //   LlgTokenizerInitV2 init_v2 = {};
+  //   init_v2.struct_size = sizeof(init_v2);
+  //   init_v2.vocab_size = tok_init.vocab_size;
+  //   init_v2.tok_eos = tok_init.tok_eos;
+  //   init_v2.token_lens = tok_init.token_lens;
+  //   init_v2.token_bytes = tok_init.token_bytes;
+  //   init_v2.tokenize_fn = tok_init.tokenize_fn;
   //   LlgToken extra_eos[] = {second_eos, third_eos};
-  //   tok_init_v2.tok_eos_extra = extra_eos;
-  //   tok_init_v2.tok_eos_extra_count = sizeof(extra_eos) / sizeof(extra_eos[0]);
-  //   auto tok = llg_new_tokenizer_v2(&tok_init_v2, error_buf, sizeof(error_buf));
+  //   init_v2.tok_eos_extra = extra_eos;
+  //   init_v2.tok_eos_extra_count = sizeof(extra_eos) / sizeof(extra_eos[0]);
+  //   auto tok = llg_new_tokenizer_v2(&init_v2, error_buf, sizeof(error_buf));
 
   char error_buf[128];
   auto tok = llg_new_tokenizer(&tok_init, error_buf, sizeof(error_buf));

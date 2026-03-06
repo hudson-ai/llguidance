@@ -142,32 +142,42 @@ impl LlgTokenizer {
         Self::finish_init(init, trie)
     }
 
-    fn from_init_v2(init_v2: &LlgTokenizerInitV2) -> Result<Self> {
+    fn from_init_v2(init: &LlgTokenizerInitV2) -> Result<Self> {
         let min_size = std::mem::size_of::<LlgTokenizerInitV2>();
         ensure!(
-            init_v2.struct_size >= min_size,
+            init.struct_size >= min_size,
             "LlgTokenizerInitV2.struct_size is {} but expected at least {}. \
              Set struct_size = sizeof(LlgTokenizerInitV2).",
-            init_v2.struct_size,
+            init.struct_size,
             min_size
         );
 
-        let init = &init_v2.base;
-        // Build the base tokenizer the same way as v1
-        let mut tok = Self::from_init(init)?;
+        // Build a v1 init from the shared fields and delegate
+        let v1 = LlgTokenizerInit {
+            vocab_size: init.vocab_size,
+            tok_eos: init.tok_eos,
+            token_lens: init.token_lens,
+            token_bytes: init.token_bytes,
+            tokenizer_json: init.tokenizer_json,
+            tokenize_assumes_string: init.tokenize_assumes_string,
+            tokenize_fn: init.tokenize_fn,
+            use_approximate_greedy_tokenize_fn: init.use_approximate_greedy_tokenize_fn,
+            tokenize_user_data: init.tokenize_user_data,
+            slices: init.slices,
+        };
+        let mut tok = Self::from_init(&v1)?;
 
         // Apply additional EOS tokens if provided
-        if !init_v2.tok_eos_extra.is_null() && init_v2.tok_eos_extra_count > 0 {
+        if !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
             let extra = unsafe {
                 std::slice::from_raw_parts(
-                    init_v2.tok_eos_extra,
-                    init_v2.tok_eos_extra_count as usize,
+                    init.tok_eos_extra,
+                    init.tok_eos_extra_count as usize,
                 )
             };
             let mut eos_tokens = vec![init.tok_eos];
             eos_tokens.extend_from_slice(extra);
 
-            // Rebuild the factory with updated EOS tokens on the trie
             let trie = tok.factory.tok_env().tok_trie().clone().with_eos_tokens(&eos_tokens);
             let tok_env: TokEnv = Arc::new(CTokenizerInner {
                 trie,
@@ -176,7 +186,7 @@ impl LlgTokenizer {
                 tokenize_fn: init.tokenize_fn,
                 tokenize_user_data: init.tokenize_user_data,
             });
-            let slices = Self::read_slices(init)?;
+            let slices = Self::read_slices_raw(init.slices)?;
             let factory =
                 ParserFactory::new(&tok_env, InferenceCapabilities::default(), &slices)?;
             tok.factory = Arc::new(factory);
@@ -185,22 +195,22 @@ impl LlgTokenizer {
         Ok(tok)
     }
 
-    fn read_slices(init: &LlgTokenizerInit) -> Result<Vec<String>> {
-        if init.slices.is_null() {
+    fn read_slices_raw(slices: *const *const c_char) -> Result<Vec<String>> {
+        if slices.is_null() {
             Ok(SlicedBiasComputer::general_slices())
         } else {
-            let mut slices = vec![];
+            let mut result = vec![];
             let mut idx = 0;
             loop {
-                let p = unsafe { *init.slices.add(idx) };
+                let p = unsafe { *slices.add(idx) };
                 if p.is_null() {
                     break;
                 }
                 let s = unsafe { c_str_to_str(p, "slice") }?;
-                slices.push(s.to_string());
+                result.push(s.to_string());
                 idx += 1;
             }
-            Ok(slices)
+            Ok(result)
         }
     }
 
@@ -212,7 +222,7 @@ impl LlgTokenizer {
             tokenize_user_data: init.tokenize_user_data,
         });
 
-        let slices = Self::read_slices(init)?;
+        let slices = Self::read_slices_raw(init.slices)?;
 
         let factory = ParserFactory::new(&tok_env, InferenceCapabilities::default(), &slices)?;
 
@@ -320,12 +330,51 @@ pub struct LlgTokenizerInitV2 {
     /// This allows the library to detect which fields are available.
     pub struct_size: usize,
 
-    /// All fields from the original LlgTokenizerInit.
-    pub base: LlgTokenizerInit,
+    /// The number of tokens in the vocabulary
+    pub vocab_size: u32,
 
-    /// Additional EOS token IDs beyond `base.tok_eos`.
+    /// The token ID for the end of sentence token
+    /// For chat mode, set it to end-of-turn token
+    pub tok_eos: LlgToken,
+
+    /// An array of the lengths of the token strings (vocab_size elements)
+    pub token_lens: *const u32,
+
+    /// A pointer to the token strings
+    /// The length of this the sum of all token_lens
+    pub token_bytes: *const u8,
+
+    /// Instead of passing token_lens and token_bytes, this can be set to
+    /// the contents of HF tokenizer.json file.
+    pub tokenizer_json: *const c_char,
+
+    /// Set to true to enable hack that works around the tokenize_fn only
+    /// accepting valid UTF-8 strings and possibly adding <BOS> etc.
+    /// TODO: the <BOS> bit not implemented yet
+    pub tokenize_assumes_string: bool,
+
+    /// Tokenization function, see LlgTokenizeFn docs.
+    /// It should only tokenize the bytes and not add
+    /// any <BOS> etc. It should also work on any byte sequence, including
+    /// invalid UTF-8. If this is not the case, set tokenize_assumes_string to true.
+    /// Either way, this function has to be thread-safe!
+    pub tokenize_fn: LlgTokenizeFn,
+
+    /// Set to true to not use tokenize_fn and instead tokenize greedily,
+    /// which is often incorrect and may reduce accuracy.
+    pub use_approximate_greedy_tokenize_fn: bool,
+
+    /// User data to pass to the tokenize_fn
+    pub tokenize_user_data: *const c_void,
+
+    /// Tokenizer partitions for the slicer optimization.
+    /// This is array of pointers to strings, terminated with NULL (argv style).
+    /// Pass NULL to use defaults. Pass empty array to disable.
+    pub slices: *const *const c_char,
+
+    /// Additional EOS token IDs beyond `tok_eos`.
     /// Points to an array of `tok_eos_extra_count` elements.
-    /// When NULL (the default for zero-initialized structs), only `base.tok_eos` is used.
+    /// When NULL (the default for zero-initialized structs), only `tok_eos` is used.
     pub tok_eos_extra: *const LlgToken,
 
     /// Number of elements in the `tok_eos_extra` array.

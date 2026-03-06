@@ -263,13 +263,61 @@ typedef struct LlgTokenizerInitV2 {
    */
   size_t struct_size;
   /**
-   * All fields from the original LlgTokenizerInit.
+   * The number of tokens in the vocabulary
    */
-  struct LlgTokenizerInit base;
+  uint32_t vocab_size;
   /**
-   * Additional EOS token IDs beyond `base.tok_eos`.
+   * The token ID for the end of sentence token
+   * For chat mode, set it to end-of-turn token
+   */
+  LlgToken tok_eos;
+  /**
+   * An array of the lengths of the token strings (vocab_size elements)
+   */
+  const uint32_t *token_lens;
+  /**
+   * A pointer to the token strings
+   * The length of this the sum of all token_lens
+   */
+  const uint8_t *token_bytes;
+  /**
+   * Instead of passing token_lens and token_bytes, this can be set to
+   * the contents of HF tokenizer.json file.
+   */
+  const char *tokenizer_json;
+  /**
+   * Set to true to enable hack that works around the tokenize_fn only
+   * accepting valid UTF-8 strings and possibly adding <BOS> etc.
+   * TODO: the <BOS> bit not implemented yet
+   */
+  bool tokenize_assumes_string;
+  /**
+   * Tokenization function, see LlgTokenizeFn docs.
+   * It should only tokenize the bytes and not add
+   * any <BOS> etc. It should also work on any byte sequence, including
+   * invalid UTF-8. If this is not the case, set tokenize_assumes_string to true.
+   * Either way, this function has to be thread-safe!
+   */
+  LlgTokenizeFn tokenize_fn;
+  /**
+   * Set to true to not use tokenize_fn and instead tokenize greedily,
+   * which is often incorrect and may reduce accuracy.
+   */
+  bool use_approximate_greedy_tokenize_fn;
+  /**
+   * User data to pass to the tokenize_fn
+   */
+  const void *tokenize_user_data;
+  /**
+   * Tokenizer partitions for the slicer optimization.
+   * This is array of pointers to strings, terminated with NULL (argv style).
+   * Pass NULL to use defaults. Pass empty array to disable.
+   */
+  const char *const *slices;
+  /**
+   * Additional EOS token IDs beyond `tok_eos`.
    * Points to an array of `tok_eos_extra_count` elements.
-   * When NULL (the default for zero-initialized structs), only `base.tok_eos` is used.
+   * When NULL (the default for zero-initialized structs), only `tok_eos` is used.
    */
   const LlgToken *tok_eos_extra;
   /**
