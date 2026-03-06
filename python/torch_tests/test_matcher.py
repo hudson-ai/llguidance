@@ -677,14 +677,14 @@ def test_multi_eos_tokens_property() -> None:
 class _MockTokenizerWrapper:
     """Minimal mock that satisfies the TokenizerWrapper interface for testing."""
 
-    def __init__(self, tokens: list, eos_token_id: int):
+    def __init__(self, tokens: List[bytes], eos_token_id: int):
         self.tokens = tokens
         self.eos_token_id = eos_token_id
         self.bos_token_id = None
-        self.special_token_ids = []
+        self.special_token_ids: List[int] = []
         self.is_tokenizer_wrapper = True
 
-    def __call__(self, s: str) -> list:
+    def __call__(self, s: str) -> List[int]:
         return [b for b in s.encode("utf-8")]
 
 
@@ -698,11 +698,11 @@ def test_multi_eos_wrapper_override() -> None:
     wrapper = _MockTokenizerWrapper(tokens, eos_token_id=256)
 
     # Without override: single EOS
-    tok1 = LLTokenizer(wrapper)
+    tok1 = LLTokenizer(wrapper)  # type: ignore[arg-type]
     assert tok1.eos_token == 256
     assert tok1.eos_tokens == [256]
 
     # With override: multiple EOS
-    tok2 = LLTokenizer(wrapper, eos_token=[256, 257])
+    tok2 = LLTokenizer(wrapper, eos_token=[256, 257])  # type: ignore[arg-type]
     assert tok2.eos_token == 256
     assert tok2.eos_tokens == [256, 257]
