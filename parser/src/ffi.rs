@@ -170,25 +170,25 @@ impl LlgTokenizer {
         // Apply additional EOS tokens if provided
         if !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
             let extra = unsafe {
-                std::slice::from_raw_parts(
-                    init.tok_eos_extra,
-                    init.tok_eos_extra_count as usize,
-                )
+                std::slice::from_raw_parts(init.tok_eos_extra, init.tok_eos_extra_count as usize)
             };
             let mut eos_tokens = vec![init.tok_eos];
             eos_tokens.extend_from_slice(extra);
 
-            let trie = tok.factory.tok_env().tok_trie().clone().with_eos_tokens(&eos_tokens);
+            let trie = tok
+                .factory
+                .tok_env()
+                .tok_trie()
+                .clone()
+                .with_eos_tokens(&eos_tokens);
             let tok_env: TokEnv = Arc::new(CTokenizerInner {
                 trie,
-                tokenize_assumes_string: init.tokenize_assumes_string
-                    && init.tokenize_fn.is_some(),
+                tokenize_assumes_string: init.tokenize_assumes_string && init.tokenize_fn.is_some(),
                 tokenize_fn: init.tokenize_fn,
                 tokenize_user_data: init.tokenize_user_data,
             });
             let slices = Self::read_slices_raw(init.slices)?;
-            let factory =
-                ParserFactory::new(&tok_env, InferenceCapabilities::default(), &slices)?;
+            let factory = ParserFactory::new(&tok_env, InferenceCapabilities::default(), &slices)?;
             tok.factory = Arc::new(factory);
         }
 
@@ -313,7 +313,6 @@ pub struct LlgTokenizerInit {
     /// This is array of pointers to strings, terminated with NULL (argv style).
     /// Pass NULL to use defaults. Pass empty array to disable.
     pub slices: *const *const c_char,
-
 }
 
 /// V2 of the tokenizer initialization struct.
