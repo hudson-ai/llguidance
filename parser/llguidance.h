@@ -259,7 +259,8 @@ typedef struct LlgTokenizerInit {
 typedef struct LlgTokenizerInitV2 {
   /**
    * Must be set to `sizeof(LlgTokenizerInitV2)`.
-   * This allows the library to detect which fields are available.
+   * The library uses this to determine which fields are present, allowing
+   * older callers (with a smaller struct) to work with newer library versions.
    */
   size_t struct_size;
   /**

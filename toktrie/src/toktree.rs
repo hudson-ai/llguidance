@@ -222,6 +222,13 @@ impl TokTrie {
 
     pub fn with_eos_tokens(&self, eos_tokens: &[TokenId]) -> Self {
         assert!(!eos_tokens.is_empty(), "eos_tokens must not be empty");
+        let vocab = self.vocab_size() as u32;
+        for &tok in eos_tokens {
+            assert!(
+                tok < vocab,
+                "EOS token ID {tok} is out of range (vocab_size={vocab})"
+            );
+        }
         let mut r = self.clone();
         r.info.tok_eos = eos_tokens[0];
         r.eos_tokens = eos_tokens.to_vec();

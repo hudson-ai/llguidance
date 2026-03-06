@@ -143,14 +143,20 @@ impl LlgTokenizer {
     }
 
     fn from_init_v2(init: &LlgTokenizerInitV2) -> Result<Self> {
-        let min_size = std::mem::size_of::<LlgTokenizerInitV2>();
+        // The minimum struct_size is the base fields through slices (same as
+        // LlgTokenizerInit + the leading struct_size field). Fields appended
+        // after slices are only read when struct_size indicates they're present.
+        let base_size = std::mem::offset_of!(LlgTokenizerInitV2, tok_eos_extra);
         ensure!(
-            init.struct_size >= min_size,
+            init.struct_size >= base_size,
             "LlgTokenizerInitV2.struct_size is {} but expected at least {}. \
              Set struct_size = sizeof(LlgTokenizerInitV2).",
             init.struct_size,
-            min_size
+            base_size
         );
+
+        let has_eos_extra =
+            init.struct_size >= std::mem::size_of::<LlgTokenizerInitV2>();
 
         // Build a v1 init from the shared fields and delegate
         let v1 = LlgTokenizerInit {
@@ -167,8 +173,8 @@ impl LlgTokenizer {
         };
         let mut tok = Self::from_init(&v1)?;
 
-        // Apply additional EOS tokens if provided
-        if !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
+        // Apply additional EOS tokens if the struct is large enough to contain them
+        if has_eos_extra && !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
             let extra = unsafe {
                 std::slice::from_raw_parts(init.tok_eos_extra, init.tok_eos_extra_count as usize)
             };
@@ -326,7 +332,8 @@ pub struct LlgTokenizerInit {
 #[repr(C)]
 pub struct LlgTokenizerInitV2 {
     /// Must be set to `sizeof(LlgTokenizerInitV2)`.
-    /// This allows the library to detect which fields are available.
+    /// The library uses this to determine which fields are present, allowing
+    /// older callers (with a smaller struct) to work with newer library versions.
     pub struct_size: usize,
 
     /// The number of tokens in the vocabulary
