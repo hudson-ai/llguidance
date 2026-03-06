@@ -706,14 +706,3 @@ def test_multi_eos_wrapper_override() -> None:
     tok2 = LLTokenizer(wrapper, eos_token=[256, 257])
     assert tok2.eos_token == 256
     assert tok2.eos_tokens == [256, 257]
-
-    # Verify both EOS tokens appear in mask when grammar is accepting
-    m = LLMatcher(tok2, r'start: "ab"')
-    assert not m.is_error()
-    m.consume_token(ord("a"))
-    m.consume_token(ord("b"))
-    assert not m.is_error()
-
-    mask = m.compute_logit_bias()
-    assert mask[256] == 200  # primary EOS
-    assert mask[257] == 200  # extra EOS

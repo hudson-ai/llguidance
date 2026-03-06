@@ -1276,4 +1276,25 @@ mod tests {
     fn test_with_eos_tokens_empty_panics() {
         make_test_trie(0).with_eos_tokens(&[]);
     }
+
+    #[test]
+    fn test_eos_token_set_single() {
+        let trie = make_test_trie(2);
+        let set = trie.eos_token_set();
+        assert!(set.is_allowed(2));
+        assert!(!set.is_allowed(0));
+        assert!(!set.is_allowed(1));
+        assert_eq!(set.num_set(), 1);
+    }
+
+    #[test]
+    fn test_eos_token_set_multiple() {
+        let trie = make_test_trie(0).with_eos_tokens(&[1, 3]);
+        let set = trie.eos_token_set();
+        assert!(set.is_allowed(1));
+        assert!(set.is_allowed(3));
+        assert!(!set.is_allowed(0));
+        assert!(!set.is_allowed(2));
+        assert_eq!(set.num_set(), 2);
+    }
 }
