@@ -445,8 +445,8 @@ struct LlgTokenizer *llg_new_tokenizer(const struct LlgTokenizerInit *tok_init,
  *
  * `tok_init` must point to at least `tok_init->struct_size` bytes of
  * initialized memory, and `struct_size` must be at least
- * `offsetof(LlgTokenizerInitV2, tok_eos)` (i.e., include the struct_size
- * field itself plus vocab_size).
+ * `offsetof(LlgTokenizerInitV2, token_lens)` (i.e., include struct_size,
+ * vocab_size, and the complete tok_eos field).
  */
 struct LlgTokenizer *llg_new_tokenizer_v2(const struct LlgTokenizerInitV2 *tok_init,
                                           char *error_string,

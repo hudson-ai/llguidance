@@ -232,12 +232,24 @@ impl ByteTokenizer {
     }
 
     pub fn set_eos_token(&mut self, tok_id: u32) {
+        assert!(
+            tok_id < self.info.vocab_size,
+            "EOS token ID {tok_id} is out of range (vocab_size={})",
+            self.info.vocab_size
+        );
         self.info.tok_eos = tok_id;
         self.eos_tokens_extra.clear();
     }
 
     pub fn set_eos_tokens(&mut self, tokens: &[TokenId]) {
         assert!(!tokens.is_empty(), "eos_tokens must not be empty");
+        for &tok in tokens {
+            assert!(
+                tok < self.info.vocab_size,
+                "EOS token ID {tok} is out of range (vocab_size={})",
+                self.info.vocab_size
+            );
+        }
         self.info.tok_eos = tokens[0];
         self.eos_tokens_extra = tokens[1..].to_vec();
     }

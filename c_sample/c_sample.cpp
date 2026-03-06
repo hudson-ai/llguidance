@@ -51,6 +51,9 @@ LlgTokenizer *create_tokenizer_v2(std::vector<std::vector<uint8_t>> &tokens,
     exit(1);
   }
 
+  delete[] token_lens;
+  delete[] token_bytes;
+
   return tok;
 }
 
@@ -100,6 +103,9 @@ LlgTokenizer *create_tokenizer(std::vector<std::vector<uint8_t>> &tokens,
     printf("Error: %s\n", error_buf);
     exit(1);
   }
+
+  delete[] token_lens;
+  delete[] token_bytes;
 
   return tok;
 }

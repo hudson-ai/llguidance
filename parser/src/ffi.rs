@@ -804,8 +804,8 @@ pub unsafe extern "C" fn llg_new_tokenizer(
 /// # Safety
 /// `tok_init` must point to at least `tok_init->struct_size` bytes of
 /// initialized memory, and `struct_size` must be at least
-/// `offsetof(LlgTokenizerInitV2, tok_eos)` (i.e., include the struct_size
-/// field itself plus vocab_size).
+/// `offsetof(LlgTokenizerInitV2, token_lens)` (i.e., include struct_size,
+/// vocab_size, and the complete tok_eos field).
 #[no_mangle]
 pub unsafe extern "C" fn llg_new_tokenizer_v2(
     tok_init: *const LlgTokenizerInitV2,
@@ -823,7 +823,8 @@ pub unsafe extern "C" fn llg_new_tokenizer_v2(
 
     // Read struct_size from the first field (always safe if pointer is valid)
     let struct_size = unsafe { std::ptr::read(tok_init as *const usize) };
-    let min_size = std::mem::offset_of!(LlgTokenizerInitV2, tok_eos);
+    let min_size =
+        std::mem::offset_of!(LlgTokenizerInitV2, tok_eos) + std::mem::size_of::<LlgToken>();
     if struct_size < min_size {
         save_error_string(
             anyhow::anyhow!(
