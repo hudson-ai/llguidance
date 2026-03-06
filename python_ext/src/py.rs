@@ -126,8 +126,8 @@ impl LLTokenizer {
             eos_tokens[0],
         )
         .map_err(val_error)?;
+        validate_eos_tokens(&eos_tokens, bpe.tokrx_info().vocab_size)?;
         if eos_tokens.len() > 1 {
-            validate_eos_tokens(&eos_tokens, bpe.tokrx_info().vocab_size)?;
             bpe.set_eos_tokens(&eos_tokens);
         }
         let tok_env = bpe.to_env();
