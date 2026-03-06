@@ -56,10 +56,7 @@ impl LLTokenizer {
         eos_token: Option<Bound<'_, PyAny>>,
         slices: Option<Vec<String>>,
     ) -> PyResult<Self> {
-        let eos_tokens = eos_token
-            .as_ref()
-            .map(extract_eos_tokens)
-            .transpose()?;
+        let eos_tokens = eos_token.as_ref().map(extract_eos_tokens).transpose()?;
         let tok_env: TokEnv = if let Ok(tokenizer_str) = tokenizer.extract::<String>() {
             if tokenizer_str == "byte" {
                 ApproximateTokEnv::single_byte_env()
@@ -137,8 +134,8 @@ impl LLTokenizer {
         slices: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let eos_tokens = extract_eos_tokens(&eos_token)?;
-        let tok_env =
-            tokenv_from_llamacpp(tokens, vocab_ptr, tokenize_fptr, &eos_tokens).map_err(val_error)?;
+        let tok_env = tokenv_from_llamacpp(tokens, vocab_ptr, tokenize_fptr, &eos_tokens)
+            .map_err(val_error)?;
 
         let factory = ParserFactory::new(
             &tok_env,

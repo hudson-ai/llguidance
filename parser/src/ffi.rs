@@ -140,8 +140,9 @@ impl LlgTokenizer {
         let mut trie = TokTrie::from(&TokRxInfo::new(tokens.len() as u32, init.tok_eos), &tokens);
 
         if !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
-            let extra =
-                unsafe { std::slice::from_raw_parts(init.tok_eos_extra, init.tok_eos_extra_count as usize) };
+            let extra = unsafe {
+                std::slice::from_raw_parts(init.tok_eos_extra, init.tok_eos_extra_count as usize)
+            };
             let mut eos_tokens = vec![init.tok_eos];
             eos_tokens.extend_from_slice(extra);
             trie = trie.with_eos_tokens(&eos_tokens);

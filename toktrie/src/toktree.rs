@@ -1210,12 +1210,7 @@ mod tests {
 
     fn make_test_trie(eos: TokenId) -> TokTrie {
         let info = TokRxInfo::new(4, eos);
-        let words = vec![
-            b"a".to_vec(),
-            b"b".to_vec(),
-            b"c".to_vec(),
-            b"d".to_vec(),
-        ];
+        let words = vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec(), b"d".to_vec()];
         TokTrie::from(&info, &words)
     }
 
