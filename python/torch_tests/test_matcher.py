@@ -694,28 +694,29 @@ def test_multi_eos_tokens_property() -> None:
     assert len(tok.eos_tokens) == 1
 
 
-class _MockTokenizerWrapper:
-    """Minimal mock that satisfies the TokenizerWrapper interface for testing."""
-
-    def __init__(self, tokens: List[bytes], eos_token_id: int):
-        self.tokens = tokens
-        self.eos_token_id = eos_token_id
-        self.bos_token_id = None
-        self.special_token_ids: List[int] = []
-        self.is_tokenizer_wrapper = True
-
-    def __call__(self, s: str) -> List[int]:
-        return [b for b in s.encode("utf-8")]
-
 
 def test_multi_eos_wrapper_override() -> None:
     """Test that eos_token override works with TokenizerWrapper path."""
+
+    class MockTokenizerWrapper:
+        """Minimal mock that satisfies the TokenizerWrapper interface for testing."""
+
+        def __init__(self, tokens: List[bytes], eos_token_id: int):
+            self.tokens = tokens
+            self.eos_token_id = eos_token_id
+            self.bos_token_id = None
+            self.special_token_ids: List[int] = []
+            self.is_tokenizer_wrapper = True
+
+        def __call__(self, s: str) -> List[int]:
+            return [b for b in s.encode("utf-8")]
+
     # Create a minimal byte-level tokenizer with 258 tokens:
     # tokens 0-255 are single bytes, 256 is <EOS>, 257 is <EOS2>
     tokens = [bytes([i]) for i in range(256)]
     tokens.append(b"<EOS>")
     tokens.append(b"<EOS2>")
-    wrapper = _MockTokenizerWrapper(tokens, eos_token_id=256)
+    wrapper = MockTokenizerWrapper(tokens, eos_token_id=256)
 
     # Without override: single EOS
     tok1 = LLTokenizer(wrapper)  # type: ignore[arg-type]
