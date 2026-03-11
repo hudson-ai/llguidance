@@ -9,13 +9,13 @@
 
 #include "llguidance.h"
 
-// Create an LlgTokenizer using the v2 API with an extra EOS token.
-// tok_eos is the primary; extra_eos_tokens are additional EOS token IDs.
+// Create an LlgTokenizer using the v2 API.
+// eos_tokens[0] is the primary EOS; any remaining entries are extra EOS token IDs.
 LlgTokenizer *create_tokenizer_v2(std::vector<std::vector<uint8_t>> &tokens,
-                                   uint32_t tok_eos,
-                                   std::vector<uint32_t> extra_eos_tokens,
+                                   std::vector<uint32_t> eos_tokens,
                                    LlgTokenizeFn tokenize_fn,
                                    const void *tokenize_user_data) {
+  assert(!eos_tokens.empty());
   std::vector<uint32_t> token_lens(tokens.size());
   size_t total_size = 0;
   for (size_t i = 0; i < tokens.size(); i++) {
@@ -32,15 +32,15 @@ LlgTokenizer *create_tokenizer_v2(std::vector<std::vector<uint8_t>> &tokens,
   LlgTokenizerInitV2 tok_init = {};
   tok_init.struct_size = sizeof(tok_init);
   tok_init.vocab_size = (uint32_t)tokens.size();
-  tok_init.tok_eos = tok_eos;
+  tok_init.tok_eos = eos_tokens[0];
   tok_init.token_lens = token_lens.data();
   tok_init.token_bytes = token_bytes.data();
   tok_init.tokenize_assumes_string = false;
   tok_init.tokenize_user_data = tokenize_user_data;
   tok_init.tokenize_fn = tokenize_fn;
-  if (!extra_eos_tokens.empty()) {
-    tok_init.tok_eos_extra = extra_eos_tokens.data();
-    tok_init.tok_eos_extra_count = (uint32_t)extra_eos_tokens.size();
+  if (eos_tokens.size() > 1) {
+    tok_init.tok_eos_extra = eos_tokens.data() + 1;
+    tok_init.tok_eos_extra_count = (uint32_t)(eos_tokens.size() - 1);
   }
 
   char error_buf[128];
@@ -150,10 +150,10 @@ LlgTokenizer *create_byte_tokenizer_v2(void) {
   tokens.push_back(std::vector<uint8_t>(eos, eos + strlen(eos)));
   const char *eos2 = "<EOS2>";
   tokens.push_back(std::vector<uint8_t>(eos2, eos2 + strlen(eos2)));
-  // Primary EOS is token 256 (<EOS>), extra EOS is token 257 (<EOS2>)
-  std::vector<uint32_t> extra_eos = {(uint32_t)(tokens.size() - 1)};
-  return create_tokenizer_v2(tokens, tokens.size() - 2, extra_eos,
-                             tokenize_callback, nullptr);
+  // EOS tokens: token 256 (<EOS>) is primary, token 257 (<EOS2>) is extra
+  std::vector<uint32_t> eos_tokens = {(uint32_t)(tokens.size() - 2),
+                                      (uint32_t)(tokens.size() - 1)};
+  return create_tokenizer_v2(tokens, eos_tokens, tokenize_callback, nullptr);
 }
 
 LlgTokenizer *create_hf_tokenizer(std::string tokenizer_json,
