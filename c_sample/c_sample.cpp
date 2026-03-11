@@ -16,16 +16,16 @@ LlgTokenizer *create_tokenizer_v2(std::vector<std::vector<uint8_t>> &tokens,
                                    std::vector<uint32_t> extra_eos_tokens,
                                    LlgTokenizeFn tokenize_fn,
                                    const void *tokenize_user_data) {
-  auto token_lens = new uint32_t[tokens.size()];
+  std::vector<uint32_t> token_lens(tokens.size());
   size_t total_size = 0;
   for (size_t i = 0; i < tokens.size(); i++) {
     token_lens[i] = tokens[i].size();
     total_size += token_lens[i];
   }
-  auto token_bytes = new uint8_t[total_size];
+  std::vector<uint8_t> token_bytes(total_size);
   size_t offset = 0;
   for (size_t i = 0; i < tokens.size(); i++) {
-    memcpy(token_bytes + offset, tokens[i].data(), token_lens[i]);
+    memcpy(token_bytes.data() + offset, tokens[i].data(), token_lens[i]);
     offset += token_lens[i];
   }
 
@@ -33,8 +33,8 @@ LlgTokenizer *create_tokenizer_v2(std::vector<std::vector<uint8_t>> &tokens,
   tok_init.struct_size = sizeof(tok_init);
   tok_init.vocab_size = (uint32_t)tokens.size();
   tok_init.tok_eos = tok_eos;
-  tok_init.token_lens = token_lens;
-  tok_init.token_bytes = token_bytes;
+  tok_init.token_lens = token_lens.data();
+  tok_init.token_bytes = token_bytes.data();
   tok_init.tokenize_assumes_string = false;
   tok_init.tokenize_user_data = tokenize_user_data;
   tok_init.tokenize_fn = tokenize_fn;
@@ -51,9 +51,6 @@ LlgTokenizer *create_tokenizer_v2(std::vector<std::vector<uint8_t>> &tokens,
     exit(1);
   }
 
-  delete[] token_lens;
-  delete[] token_bytes;
-
   return tok;
 }
 
@@ -62,23 +59,23 @@ LlgTokenizer *create_tokenizer_v2(std::vector<std::vector<uint8_t>> &tokens,
 LlgTokenizer *create_tokenizer(std::vector<std::vector<uint8_t>> &tokens,
                                uint32_t tok_eos, LlgTokenizeFn tokenize_fn,
                                const void *tokenize_user_data) {
-  auto token_lens = new uint32_t[tokens.size()];
+  std::vector<uint32_t> token_lens(tokens.size());
   size_t total_size = 0;
   for (size_t i = 0; i < tokens.size(); i++) {
     token_lens[i] = tokens[i].size();
     total_size += token_lens[i];
   }
-  auto token_bytes = new uint8_t[total_size];
+  std::vector<uint8_t> token_bytes(total_size);
   size_t offset = 0;
   for (size_t i = 0; i < tokens.size(); i++) {
-    memcpy(token_bytes + offset, tokens[i].data(), token_lens[i]);
+    memcpy(token_bytes.data() + offset, tokens[i].data(), token_lens[i]);
     offset += token_lens[i];
   }
   LlgTokenizerInit tok_init = {};
   tok_init.vocab_size = (uint32_t)tokens.size();
   tok_init.tok_eos = tok_eos;
-  tok_init.token_lens = token_lens;
-  tok_init.token_bytes = token_bytes;
+  tok_init.token_lens = token_lens.data();
+  tok_init.token_bytes = token_bytes.data();
   tok_init.tokenize_assumes_string = false;
   tok_init.tokenize_user_data = tokenize_user_data;
   tok_init.tokenize_fn = tokenize_fn;
@@ -103,9 +100,6 @@ LlgTokenizer *create_tokenizer(std::vector<std::vector<uint8_t>> &tokens,
     printf("Error: %s\n", error_buf);
     exit(1);
   }
-
-  delete[] token_lens;
-  delete[] token_bytes;
 
   return tok;
 }
