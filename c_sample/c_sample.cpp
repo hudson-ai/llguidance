@@ -108,8 +108,8 @@ size_t tokenize_callback(const void *user_data, const uint8_t *bytes,
   (void)user_data;
   auto tokens = bogus_tokenize(bytes, bytes_len);
   if (output_tokens_len > 0) {
-    memcpy(output_tokens, tokens.data(),
-           std::min(output_tokens_len, tokens.size()) * sizeof(uint32_t));
+    auto n = std::min(output_tokens_len, tokens.size());
+    std::copy(tokens.begin(), tokens.begin() + n, output_tokens);
   }
   return tokens.size();
 }
