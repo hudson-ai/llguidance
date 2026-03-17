@@ -25,7 +25,7 @@ LlgTokenizer *create_tokenizer_v2(std::vector<std::vector<uint8_t>> &tokens,
   std::vector<uint8_t> token_bytes(total_size);
   size_t offset = 0;
   for (size_t i = 0; i < tokens.size(); i++) {
-    memcpy(token_bytes.data() + offset, tokens[i].data(), token_lens[i]);
+    std::copy(tokens[i].begin(), tokens[i].end(), token_bytes.data() + offset);
     offset += token_lens[i];
   }
 
@@ -68,7 +68,7 @@ LlgTokenizer *create_tokenizer(std::vector<std::vector<uint8_t>> &tokens,
   std::vector<uint8_t> token_bytes(total_size);
   size_t offset = 0;
   for (size_t i = 0; i < tokens.size(); i++) {
-    memcpy(token_bytes.data() + offset, tokens[i].data(), token_lens[i]);
+    std::copy(tokens[i].begin(), tokens[i].end(), token_bytes.data() + offset);
     offset += token_lens[i];
   }
   LlgTokenizerInit tok_init = {};
