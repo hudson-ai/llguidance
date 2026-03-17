@@ -117,6 +117,7 @@ size_t tokenize_callback(const void *user_data, const uint8_t *bytes,
 // This creates a tokenizer that treats each byte as a token.
 LlgTokenizer *create_byte_tokenizer(void) {
   std::vector<std::vector<uint8_t>> tokens;
+  tokens.reserve(257); // 256 byte tokens + 1 EOS
   // every byte is a token
   for (size_t i = 0; i < 256; i++) {
     tokens.push_back({(uint8_t)i});
@@ -130,6 +131,7 @@ LlgTokenizer *create_byte_tokenizer(void) {
 // Same as above but using the v2 API with an extra (unused) EOS token.
 LlgTokenizer *create_byte_tokenizer_v2(void) {
   std::vector<std::vector<uint8_t>> tokens;
+  tokens.reserve(258); // 256 byte tokens + 2 EOS
   for (size_t i = 0; i < 256; i++) {
     tokens.push_back({(uint8_t)i});
   }
