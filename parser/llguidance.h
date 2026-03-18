@@ -288,14 +288,14 @@ typedef struct LlgTokenizerInitV2 {
   const char *tokenizer_json;
   /**
    * Set to true to enable hack that works around the tokenize_fn only
-   * accepting valid UTF-8 strings and possibly adding <BOS> etc.
-   * TODO: the <BOS> bit not implemented yet
+   * accepting valid UTF-8 strings and possibly adding `<BOS>` etc.
+   * TODO: the `<BOS>` bit not implemented yet
    */
   bool tokenize_assumes_string;
   /**
    * Tokenization function, see LlgTokenizeFn docs.
    * It should only tokenize the bytes and not add
-   * any <BOS> etc. It should also work on any byte sequence, including
+   * any `<BOS>` etc. It should also work on any byte sequence, including
    * invalid UTF-8. If this is not the case, set tokenize_assumes_string to true.
    * Either way, this function has to be thread-safe!
    */
