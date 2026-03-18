@@ -100,11 +100,10 @@ unsafe fn slice_from_ptr_or_empty<'a, T>(data: *const T, len: usize) -> &'a [T] 
 
 impl LlgTokenizer {
     fn from_init(init: &LlgTokenizerInit) -> Result<Self> {
-        let trie = Self::build_trie(init)?;
-        Self::finish_init(init, trie)
+        Self::from_init_v2(&LlgTokenizerInitV2::from_v1(init))
     }
 
-    fn build_trie(init: &LlgTokenizerInit) -> Result<TokTrie> {
+    fn from_init_v2(init: &LlgTokenizerInitV2) -> Result<Self> {
         ensure!(
             init.tokenize_fn.is_some() || init.use_approximate_greedy_tokenize_fn,
             "Either tokenize_fn or use_approximate_greedy_tokenize_fn must be set"
@@ -142,29 +141,10 @@ impl LlgTokenizer {
             token_bytes
         };
 
-        Ok(TokTrie::from(
+        let mut trie = TokTrie::from(
             &TokRxInfo::new(tokens.len() as u32, init.tok_eos),
             &tokens,
-        ))
-    }
-
-    fn from_init_v2(init: &LlgTokenizerInitV2) -> Result<Self> {
-        // Build a v1 init from the shared fields and delegate
-        let v1 = LlgTokenizerInit {
-            vocab_size: init.vocab_size,
-            tok_eos: init.tok_eos,
-            token_lens: init.token_lens,
-            token_bytes: init.token_bytes,
-            tokenizer_json: init.tokenizer_json,
-            tokenize_assumes_string: init.tokenize_assumes_string,
-            tokenize_fn: init.tokenize_fn,
-            use_approximate_greedy_tokenize_fn: init.use_approximate_greedy_tokenize_fn,
-            tokenize_user_data: init.tokenize_user_data,
-            slices: init.slices,
-        };
-
-        // Build the trie via the v1 path
-        let mut trie = Self::build_trie(&v1)?;
+        );
 
         // Apply additional EOS tokens if provided
         if !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
@@ -185,29 +165,6 @@ impl LlgTokenizer {
             trie = trie.with_eos_tokens(&eos_tokens);
         }
 
-        Self::finish_init(&v1, trie)
-    }
-
-    fn read_slices_raw(slices: *const *const c_char) -> Result<Vec<String>> {
-        if slices.is_null() {
-            Ok(SlicedBiasComputer::general_slices())
-        } else {
-            let mut result = vec![];
-            let mut idx = 0;
-            loop {
-                let p = unsafe { *slices.add(idx) };
-                if p.is_null() {
-                    break;
-                }
-                let s = unsafe { c_str_to_str(p, "slice") }?;
-                result.push(s.to_string());
-                idx += 1;
-            }
-            Ok(result)
-        }
-    }
-
-    fn finish_init(init: &LlgTokenizerInit, trie: TokTrie) -> Result<Self> {
         let tok_env: TokEnv = Arc::new(CTokenizerInner {
             trie,
             tokenize_assumes_string: init.tokenize_assumes_string && init.tokenize_fn.is_some(),
@@ -215,7 +172,22 @@ impl LlgTokenizer {
             tokenize_user_data: init.tokenize_user_data,
         });
 
-        let slices = Self::read_slices_raw(init.slices)?;
+        let slices = if init.slices.is_null() {
+            SlicedBiasComputer::general_slices()
+        } else {
+            let mut slices = vec![];
+            let mut idx = 0;
+            loop {
+                let p = unsafe { *init.slices.add(idx) };
+                if p.is_null() {
+                    break;
+                }
+                let s = unsafe { c_str_to_str(p, "slice") }?;
+                slices.push(s.to_string());
+                idx += 1;
+            }
+            slices
+        };
 
         let factory = ParserFactory::new(&tok_env, InferenceCapabilities::default(), &slices)?;
 
@@ -372,6 +344,26 @@ pub struct LlgTokenizerInitV2 {
 
     /// Number of elements in the `tok_eos_extra` array.
     pub tok_eos_extra_count: u32,
+}
+
+impl LlgTokenizerInitV2 {
+    fn from_v1(v1: &LlgTokenizerInit) -> Self {
+        LlgTokenizerInitV2 {
+            struct_size: std::mem::size_of::<LlgTokenizerInitV2>(),
+            vocab_size: v1.vocab_size,
+            tok_eos: v1.tok_eos,
+            token_lens: v1.token_lens,
+            token_bytes: v1.token_bytes,
+            tokenizer_json: v1.tokenizer_json,
+            tokenize_assumes_string: v1.tokenize_assumes_string,
+            tokenize_fn: v1.tokenize_fn,
+            use_approximate_greedy_tokenize_fn: v1.use_approximate_greedy_tokenize_fn,
+            tokenize_user_data: v1.tokenize_user_data,
+            slices: v1.slices,
+            tok_eos_extra: std::ptr::null(),
+            tok_eos_extra_count: 0,
+        }
+    }
 }
 
 #[derive(Clone)]
