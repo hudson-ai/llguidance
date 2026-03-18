@@ -955,7 +955,7 @@ pub unsafe extern "C" fn llg_stringify_tokens(
 pub const LLG_DECODE_NONE: u32 = 0;
 
 /// Include special tokens in the output.
-/// They may look like <|something|>, <something_else>, or <[12345]> if they don't have a name.
+/// They may look like `<|something|>`, `<something_else>`, or `<[12345]>` if they don't have a name.
 pub const LLG_DECODE_INCLUDE_SPECIAL: u32 = 1;
 
 /// Replace invalid UTF-8 with the replacement character.
@@ -1162,12 +1162,12 @@ impl LlgMatcher {
 /// (backtracking is always disabled, and ff_tokens can be retrieved using llg_matcher_compute_ff_tokens()).
 /// The data is of different format, depending on constraint_type:
 /// - "regex" - data is regular expression in rust regex format
-///   see https://docs.rs/regex/latest/regex/#syntax
+///   see <https://docs.rs/regex/latest/regex/#syntax>
 /// - "json" or "json_schema" - data is (stringifed) JSON schema
-///   see https://github.com/guidance-ai/llguidance/blob/main/docs/json_schema.md
+///   see <https://github.com/guidance-ai/llguidance/blob/main/docs/json_schema.md>
 /// - "json_object" - equivalent to JSON schema: {"type":"object"}
 /// - "lark" - data is grammar in a variant of Lark syntax
-///   see https://github.com/guidance-ai/llguidance/blob/main/docs/syntax.md
+///   see <https://github.com/guidance-ai/llguidance/blob/main/docs/syntax.md>
 /// - "llguidance" or "guidance" - data is a list of Lark or JSON schemas in JSON format
 /// # Safety
 /// This function should only be called from C code.
