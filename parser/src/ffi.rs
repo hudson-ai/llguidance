@@ -141,10 +141,7 @@ impl LlgTokenizer {
             token_bytes
         };
 
-        let mut trie = TokTrie::from(
-            &TokRxInfo::new(tokens.len() as u32, init.tok_eos),
-            &tokens,
-        );
+        let mut trie = TokTrie::from(&TokRxInfo::new(tokens.len() as u32, init.tok_eos), &tokens);
 
         // Apply additional EOS tokens if provided
         if !init.tok_eos_extra.is_null() && init.tok_eos_extra_count > 0 {
