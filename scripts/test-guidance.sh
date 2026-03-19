@@ -41,7 +41,8 @@ cd "$TOP"
 if [ "$TEST_RUST" = 1 ] ; then
     cd "$TOP"
     cargo fmt --check
-    ./scripts/cbindgen.sh --check
+    cargo check -p llguidance --features generate-header
+    git diff --exit-code parser/llguidance.h
 
     cargo clippy --workspace --all-targets --all-features -- -D warnings
 
