@@ -41,18 +41,16 @@ fn main() {
     #[cfg(not(feature = "generate-header"))]
     println!("cargo:rerun-if-changed=llguidance.h");
 
-    // Copy header to build output directory (assumes OUT_DIR is target/{profile}/build/{crate}-{hash}/out)
+    // Place header alongside compiled library in target/{profile}/
     if let Ok(out_dir) = env::var("OUT_DIR") {
-        let target_dir = PathBuf::from(out_dir)
+        let dest = PathBuf::from(out_dir)
             .ancestors()
             .nth(3)
-            .expect("OUT_DIR should be at least 3 levels deep")
-            .join("llguidance.h");
-        std::fs::copy(&header_path, &target_dir).unwrap_or_else(|e| {
-            panic!(
-                "Failed to copy llguidance.h to {}: {e}",
-                target_dir.display()
+            .expect(
+                "unexpected OUT_DIR structure, expected target/{profile}/build/{crate}-{hash}/out",
             )
-        });
+            .join("llguidance.h");
+        std::fs::copy(&header_path, &dest)
+            .unwrap_or_else(|e| panic!("Failed to copy llguidance.h to {}: {e}", dest.display()));
     }
 }
