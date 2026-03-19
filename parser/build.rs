@@ -2,6 +2,8 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    println!("cargo:rerun-if-changed=llguidance.h");
+
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let header_path = PathBuf::from(&crate_dir).join("llguidance.h");
 
@@ -37,9 +39,6 @@ fn main() {
             println!("cargo:warning=Updated llguidance.h");
         }
     }
-
-    #[cfg(not(feature = "generate-header"))]
-    println!("cargo:rerun-if-changed=llguidance.h");
 
     // Place header alongside compiled library in target/{profile}/
     if let Ok(out_dir) = env::var("OUT_DIR") {
