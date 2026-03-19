@@ -10,9 +10,8 @@ fn main() {
         println!("cargo:rerun-if-changed=cbindgen.toml");
         println!("cargo:rerun-if-changed=src");
 
-        let config =
-            cbindgen::Config::from_file(PathBuf::from(&crate_dir).join("cbindgen.toml"))
-                .expect("Failed to read cbindgen.toml");
+        let config = cbindgen::Config::from_file(PathBuf::from(&crate_dir).join("cbindgen.toml"))
+            .expect("Failed to read cbindgen.toml");
 
         let bindings = cbindgen::Builder::new()
             .with_crate(&crate_dir)
@@ -49,7 +48,11 @@ fn main() {
             .nth(3)
             .expect("OUT_DIR should be at least 3 levels deep")
             .join("llguidance.h");
-        std::fs::copy(&header_path, &target_dir)
-            .unwrap_or_else(|e| panic!("Failed to copy llguidance.h to {}: {e}", target_dir.display()));
+        std::fs::copy(&header_path, &target_dir).unwrap_or_else(|e| {
+            panic!(
+                "Failed to copy llguidance.h to {}: {e}",
+                target_dir.display()
+            )
+        });
     }
 }
