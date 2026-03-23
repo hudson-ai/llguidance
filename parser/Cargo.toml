@@ -40,6 +40,7 @@ rayon = ["dep:rayon"]
 wasm = ["dep:instant"]
 referencing = ["dep:referencing"]
 ahash = ["derivre/ahash"]
+# Regenerate parser/llguidance.h: cargo check -p llguidance --features generate-header
 generate-header = ["dep:cbindgen"]
 
 [dev-dependencies]
