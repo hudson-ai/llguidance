@@ -1,11 +1,7 @@
 /// Runs the official JSON Schema Test Suite (draft2020-12) against our compiler
 /// with ratchet-based regression detection.
 ///
-/// Each test case gets a result category. Results are compared against a committed
-/// baseline JSON file. CI fails on regressions (got worse) AND improvements (got
-/// better — forces baseline update to keep it current).
-///
-/// Categories (ordered by "badness"):
+/// Each test case is compiled and run, then categorized by distance from correctness:
 ///   pass                      - Instance result matches expectation
 ///   false_negative            - Instance was rejected but should have been accepted
 ///   compile_error_all_invalid - Schema failed to compile, all instances invalid
@@ -13,19 +9,23 @@
 ///   compile_error_valid       - Schema failed to compile, but has valid instances
 ///   false_positive            - Instance was accepted but should have been rejected
 ///
-/// Run with: cargo test -p sample_parser --test test_json_schema_test_suite -- --nocapture
+/// Usage:
+///   cargo run -p json_schema_test_suite --release -- --expected expected.json [test_suite_dir]
 ///
 /// Future work: Add Draft 4/6/7/2019-09 test suites. Infrastructure supports it;
 /// just needs `$schema` injection for older drafts that don't include it in test schemas.
 /// Draft 4 is particularly valuable (FHIR, OpenAPI).
+use anyhow::{bail, Result};
+use llguidance::{
+    api::{GrammarInit, TopLevelGrammar},
+    TokenParser,
+};
+use sample_parser::{get_parser_factory, get_tok_env};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-mod common_lark_utils;
-use common_lark_utils::json_schema_check;
 
 #[derive(Deserialize)]
 struct TestGroup {
@@ -58,18 +58,66 @@ fn category_badness(cat: &str) -> usize {
         .unwrap_or(usize::MAX)
 }
 
-fn ensure_test_suite() -> PathBuf {
-    let local = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("JSON-Schema-Test-Suite");
-    if local.join("tests").join("draft2020-12").exists() {
-        return local;
+fn make_parser(lark: &str) -> anyhow::Result<TokenParser> {
+    let grm = TopLevelGrammar::from_lark(lark.to_string());
+    let mut parser = get_parser_factory().create_parser_from_init(
+        GrammarInit::Serialized(grm),
+        0, // quiet
+        1, // quiet
+    )?;
+    parser.start_without_prompt();
+    Ok(parser)
+}
+
+fn json_schema_check(schema: &Value, json_obj: &Value, expect_valid: bool) {
+    let lark_grammar = format!(r#"start: %json {}"#, serde_json::to_string(schema).unwrap());
+    let json_string = serde_json::to_string(json_obj).unwrap();
+    let trie = get_tok_env().tok_trie();
+    let tokens = get_tok_env().tokenize(&json_string);
+
+    let mut p = make_parser(&lark_grammar).unwrap();
+
+    for (i, tok) in tokens.iter().enumerate() {
+        let m = p.compute_mask().unwrap();
+        if m.is_allowed(*tok) {
+            let n = p.consume_token(*tok).unwrap();
+            for _ in 0..n {
+                p.compute_mask().unwrap();
+            }
+        } else {
+            let curr_tok_str = trie.token_dbg(*tok);
+            assert!(
+                !expect_valid,
+                "Unexpected token: {curr_tok_str} at token index {i}",
+            );
+            return;
+        }
     }
-    let tmp = PathBuf::from("/tmp/JSON-Schema-Test-Suite");
-    if tmp.join("tests").join("draft2020-12").exists() {
-        return tmp;
+
+    assert_eq!(p.is_accepting(), expect_valid, "Final state mismatch");
+}
+
+fn ensure_test_suite(dir: Option<&str>) -> PathBuf {
+    if let Some(d) = dir {
+        let p = PathBuf::from(d);
+        assert!(
+            p.join("tests").join("draft2020-12").exists(),
+            "No draft2020-12 tests found in {d}"
+        );
+        return p;
+    }
+    // Check common locations
+    let candidates = [
+        PathBuf::from("JSON-Schema-Test-Suite"),
+        PathBuf::from("/tmp/JSON-Schema-Test-Suite"),
+    ];
+    for c in &candidates {
+        if c.join("tests").join("draft2020-12").exists() {
+            return c.clone();
+        }
     }
     // Clone it
+    let tmp = &candidates[1];
     eprintln!("Cloning JSON-Schema-Test-Suite...");
     let status = Command::new("git")
         .args([
@@ -82,20 +130,13 @@ fn ensure_test_suite() -> PathBuf {
         .status()
         .expect("Failed to run git clone");
     assert!(status.success(), "git clone failed");
-    tmp
-}
-
-fn baseline_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("expected_json_schema_test_suite.json")
+    tmp.clone()
 }
 
 /// Nested results: file → group → test → category
 type Results = BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>;
 
 /// Run all tests in a file, recording per-test-case results.
-/// `prefix` is prepended to the key (e.g., "" for core, "optional/format/" for format tests).
 fn run_test_file(path: &Path, prefix: &str, results: &mut Results) {
     let filename = path.file_name().unwrap().to_str().unwrap();
     let stem = filename.strip_suffix(".json").unwrap_or(filename);
@@ -109,12 +150,11 @@ fn run_test_file(path: &Path, prefix: &str, results: &mut Results) {
     for group in &groups {
         let group_results = file_results.entry(group.description.clone()).or_default();
 
-        // Try to compile the schema
         let lark_grammar = format!(
             r#"start: %json {}"#,
             serde_json::to_string(&group.schema).unwrap()
         );
-        let parser_result = common_lark_utils::make_parser(&lark_grammar, true);
+        let parser_result = make_parser(&lark_grammar);
 
         match parser_result {
             Err(e) => {
@@ -156,7 +196,6 @@ fn run_test_file(path: &Path, prefix: &str, results: &mut Results) {
     }
 }
 
-/// Flatten nested results into (test_path, category) pairs for comparison.
 fn flatten(results: &Results) -> BTreeMap<String, String> {
     let mut flat = BTreeMap::new();
     for (file, groups) in results {
@@ -169,7 +208,6 @@ fn flatten(results: &Results) -> BTreeMap<String, String> {
     flat
 }
 
-/// Compare current results against baseline. Returns (regressions, improvements, new, missing).
 fn compare_results(
     current: &Results,
     baseline: &Results,
@@ -232,30 +270,48 @@ fn print_category_summary(results: &Results) {
     }
 }
 
-#[test]
-fn json_schema_test_suite_draft2020_12() {
-    let suite_root = ensure_test_suite();
+fn main() -> Result<()> {
+    // Suppress panic messages from catch_unwind (expected for false_negative/false_positive cases)
+    std::panic::set_hook(Box::new(|_| {}));
+
+    let args: Vec<String> = std::env::args().collect();
+
+    let mut expected_path: Option<String> = None;
+    let mut suite_dir: Option<String> = None;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--expected" => {
+                i += 1;
+                expected_path = Some(args[i].clone());
+            }
+            arg if !arg.starts_with('-') => {
+                suite_dir = Some(arg.to_string());
+            }
+            other => bail!("Unknown argument: {other}"),
+        }
+        i += 1;
+    }
+
+    let suite_root = ensure_test_suite(suite_dir.as_deref());
     let suite_dir = suite_root.join("tests").join("draft2020-12");
     let mut results: Results = BTreeMap::new();
 
-    // Collect JSON test files from main suite dir
-    let mut files: Vec<PathBuf> = std::fs::read_dir(&suite_dir)
-        .unwrap()
+    // Core tests
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&suite_dir)?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|ext| ext == "json"))
         .collect();
     files.sort();
-
     for file in &files {
         run_test_file(file, "", &mut results);
     }
 
-    // Also run optional format tests
+    // Optional format tests
     let format_dir = suite_dir.join("optional").join("format");
     if format_dir.exists() {
-        let mut format_files: Vec<PathBuf> = std::fs::read_dir(&format_dir)
-            .unwrap()
+        let mut format_files: Vec<PathBuf> = std::fs::read_dir(&format_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .filter(|p| p.extension().is_some_and(|ext| ext == "json"))
@@ -266,41 +322,28 @@ fn json_schema_test_suite_draft2020_12() {
         }
     }
 
-    // Print per-category summary
     print_category_summary(&results);
 
-    // Write current results for baseline generation
-    let current_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("target")
-        .join("json_schema_test_suite_results.json");
-    let json = serde_json::to_string_pretty(&results).unwrap();
-    std::fs::write(&current_path, &json).ok();
-    eprintln!("\nCurrent results written to: {}", current_path.display());
+    // Compare against baseline if provided
+    let Some(expected) = expected_path else {
+        // No baseline — just print results
+        let json = serde_json::to_string_pretty(&results)?;
+        println!("{json}");
+        return Ok(());
+    };
 
-    // Compare against baseline if it exists
-    let baseline_file = baseline_path();
+    let baseline_file = PathBuf::from(&expected);
     if !baseline_file.exists() {
-        eprintln!("\nNo baseline found at {}", baseline_file.display());
-        eprintln!("To create one, copy the current results:");
-        eprintln!(
-            "  cp {} {}",
-            current_path.display(),
-            baseline_file.display()
-        );
-        // Don't fail — allow first run without baseline locally,
-        // but fail in CI where the baseline should always be committed.
-        if std::env::var("CI").is_ok() {
-            panic!(
-                "No baseline found in CI — expected_json_schema_test_suite.json must be committed"
-            );
-        }
-        return;
+        eprintln!("\nNo baseline found at {expected}");
+        eprintln!("Writing current results as new baseline.");
+        let json = serde_json::to_string_pretty(&results)?;
+        std::fs::write(&baseline_file, &json)?;
+        eprintln!("Wrote {expected}");
+        return Ok(());
     }
 
-    let baseline_content = std::fs::read_to_string(&baseline_file).unwrap();
-    let baseline: Results =
-        serde_json::from_str(&baseline_content).expect("Failed to parse baseline JSON");
+    let baseline_content = std::fs::read_to_string(&baseline_file)?;
+    let baseline: Results = serde_json::from_str(&baseline_content)?;
 
     let (regressions, improvements, new_tests, missing_tests) =
         compare_results(&results, &baseline);
@@ -335,13 +378,7 @@ fn json_schema_test_suite_draft2020_12() {
                 eprintln!("  {m}");
             }
         }
-        eprintln!("\nBaseline mismatch. Update baseline with:");
-        eprintln!(
-            "  cp {} {}",
-            current_path.display(),
-            baseline_file.display()
-        );
-        panic!(
+        bail!(
             "Baseline mismatch: {} regressions, {} improvements, {} new, {} missing",
             regressions.len(),
             improvements.len(),
@@ -351,4 +388,5 @@ fn json_schema_test_suite_draft2020_12() {
     }
 
     eprintln!("\nAll results match baseline. ✓");
+    Ok(())
 }

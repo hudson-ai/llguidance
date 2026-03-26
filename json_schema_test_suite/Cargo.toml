@@ -1,0 +1,17 @@
+[package]
+name = "json_schema_test_suite"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+llguidance = { workspace = true }
+sample_parser = { path = "../sample_parser" }
+toktrie_hf_tokenizers = { workspace = true }
+toktrie_hf_downloader = { workspace = true }
+anyhow = "1.0.95"
+serde_json = { version = "1.0.138", features = ["preserve_order"] }
+serde = { version = "1.0.217", features = ["derive"] }
+
+[[bin]]
+name = "json_schema_test_suite"
+path = "src/main.rs"

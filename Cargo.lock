@@ -1284,6 +1284,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "json_schema_test_suite"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "llguidance",
+ "sample_parser",
+ "serde",
+ "serde_json",
+ "toktrie_hf_downloader",
+ "toktrie_hf_tokenizers",
+]
+
+[[package]]
 name = "json_stats"
 version = "0.1.0"
 dependencies = [
