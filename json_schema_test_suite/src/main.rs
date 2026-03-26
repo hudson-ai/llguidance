@@ -373,7 +373,7 @@ fn main() -> Result<()> {
 
     let mut expected_path: Option<String> = None;
     let mut suite_dir: Option<String> = None;
-    let mut draft: Option<String> = None;
+    let mut drafts_arg: Vec<String> = Vec::new();
     let mut update = false;
     let mut i = 1;
     while i < args.len() {
@@ -384,7 +384,7 @@ fn main() -> Result<()> {
             }
             "--draft" => {
                 i += 1;
-                draft = Some(args[i].clone());
+                drafts_arg.push(args[i].clone());
             }
             "--update" => {
                 update = true;
@@ -394,7 +394,7 @@ fn main() -> Result<()> {
             }
             other => bail!(
                 "Unknown argument: {other}\n\n\
-                 Usage: json_schema_test_suite [--expected FILE] [--draft DRAFT] [--update] [SUITE_DIR]"
+                 Usage: json_schema_test_suite [--expected FILE] [--draft DRAFT]... [--update] [SUITE_DIR]"
             ),
         }
         i += 1;
@@ -402,20 +402,24 @@ fn main() -> Result<()> {
 
     let suite_root = ensure_test_suite(suite_dir.as_deref());
 
-    // No baseline — run one draft, dump to stdout
+    // No baseline — run specified drafts (or default), dump to stdout
     let Some(expected) = expected_path else {
-        let draft = draft.as_deref().unwrap_or("draft2020-12");
-        let results = run_draft(&suite_root, draft)?;
-        let json = serde_json::to_string_pretty(&results)?;
-        println!("{json}");
+        if drafts_arg.is_empty() {
+            drafts_arg.push("draft2020-12".to_string());
+        }
+        for d in &drafts_arg {
+            let results = run_draft(&suite_root, d)?;
+            let json = serde_json::to_string_pretty(&results)?;
+            println!("{json}");
+        }
         return Ok(());
     };
 
     let baseline_file = PathBuf::from(&expected);
 
     // Determine which drafts to run
-    let drafts: Vec<String> = if let Some(d) = draft {
-        vec![d]
+    let drafts: Vec<String> = if !drafts_arg.is_empty() {
+        drafts_arg
     } else if baseline_file.exists() {
         // Run all drafts present in baseline
         let content = std::fs::read_to_string(&baseline_file)?;
