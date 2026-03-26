@@ -6,13 +6,12 @@
 /// better — forces baseline update to keep it current).
 ///
 /// Categories (ordered by "badness"):
-///   pass                   - Instance result matches expectation
-///   false_negative         - Instance was rejected but should have been accepted
-///   skip_compile           - Schema uses unimplemented features
-///   skip                   - Entire file or group skipped
+///   pass                      - Instance result matches expectation
+///   false_negative            - Instance was rejected but should have been accepted
 ///   compile_error_all_invalid - Schema failed to compile, all instances invalid
-///   compile_error_valid    - Schema failed to compile, but has valid instances
-///   false_positive         - Instance was accepted but should have been rejected
+///   skip_compile              - Schema failed to compile on unimplemented feature
+///   compile_error_valid       - Schema failed to compile, but has valid instances
+///   false_positive            - Instance was accepted but should have been rejected
 ///
 /// Run with: cargo test -p sample_parser --test test_json_schema_test_suite -- --nocapture
 ///
@@ -42,42 +41,12 @@ struct TestCase {
     valid: bool,
 }
 
-/// Files we know we don't support (features not implemented in llguidance).
-const SKIP_FILES: &[&str] = &[
-    // Not implemented
-    "not",
-    "if-then-else",
-    "dependentRequired",
-    "dependentSchemas",
-    "contains",
-    "minContains",
-    "maxContains",
-    "unevaluatedItems",
-    "unevaluatedProperties",
-    "propertyNames",
-    "uniqueItems",
-    "dynamicRef",
-    "vocabulary",
-    "infinite-loop-detection",
-    // Remote refs require a retriever
-    "refRemote",
-];
-
-/// Groups we skip by description substring (e.g., features we don't handle).
-const SKIP_GROUPS: &[&str] = &[
-    // $anchor not fully supported in all contexts
-    "Location-independent identifier",
-    // we don't support $id changing resolution scope in nested schemas
-    "$id inside an enum is not a real identifier",
-];
-
 /// Result categories ordered by badness (lower = better).
 const CATEGORIES: &[&str] = &[
     "pass",
     "false_negative",
-    "skip_compile",
-    "skip",
     "compile_error_all_invalid",
+    "skip_compile",
     "compile_error_valid",
     "false_positive",
 ];
@@ -122,14 +91,6 @@ fn baseline_path() -> PathBuf {
         .join("expected_json_schema_test_suite.json")
 }
 
-fn should_skip_file(filename: &str) -> bool {
-    SKIP_FILES.contains(&filename)
-}
-
-fn should_skip_group(desc: &str) -> bool {
-    SKIP_GROUPS.iter().any(|skip| desc.contains(skip))
-}
-
 /// Nested results: file → group → test → category
 type Results = BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>;
 
@@ -143,17 +104,10 @@ fn run_test_file(path: &Path, prefix: &str, results: &mut Results) {
     let content = std::fs::read_to_string(path).unwrap();
     let groups: Vec<TestGroup> = serde_json::from_str(&content).unwrap();
 
-    let file_results = results.entry(file_key.clone()).or_default();
+    let file_results = results.entry(file_key).or_default();
 
     for group in &groups {
         let group_results = file_results.entry(group.description.clone()).or_default();
-
-        if should_skip_file(&file_key) || should_skip_group(&group.description) {
-            for test in &group.tests {
-                group_results.insert(test.description.clone(), "skip".to_string());
-            }
-            continue;
-        }
 
         // Try to compile the schema
         let lark_grammar = format!(
