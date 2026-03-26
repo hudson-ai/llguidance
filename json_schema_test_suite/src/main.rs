@@ -1,4 +1,4 @@
-/// Runs the official JSON Schema Test Suite (draft2020-12) against our compiler
+/// Runs the official JSON Schema Test Suite against our compiler
 /// with ratchet-based regression detection.
 ///
 /// Each test case is compiled and run, then categorized by distance from correctness:
@@ -10,11 +10,12 @@
 ///   false_positive            - Instance was accepted but should have been rejected
 ///
 /// Usage:
-///   cargo run -p json_schema_test_suite --release -- --expected expected.json [test_suite_dir]
+///   cargo run -p json_schema_test_suite --release -- --expected expected.json
+///   cargo run -p json_schema_test_suite --release -- --draft draft7 --expected expected.json --update
 ///
-/// Future work: Add Draft 4/6/7/2019-09 test suites. Infrastructure supports it;
-/// just needs `$schema` injection for older drafts that don't include it in test schemas.
-/// Draft 4 is particularly valuable (FHIR, OpenAPI).
+/// The baseline file is keyed by draft: {"draft2020-12": {...}, "draft7": {...}}.
+/// Without --draft, all drafts in the baseline are checked.
+/// With --draft, only that draft is run.
 use anyhow::{bail, Result};
 use llguidance::{
     api::{GrammarInit, TopLevelGrammar},
@@ -100,10 +101,7 @@ fn json_schema_check(schema: &Value, json_obj: &Value, expect_valid: bool) {
 fn ensure_test_suite(dir: Option<&str>) -> PathBuf {
     if let Some(d) = dir {
         let p = PathBuf::from(d);
-        assert!(
-            p.join("tests").join("draft2020-12").exists(),
-            "No draft2020-12 tests found in {d}"
-        );
+        assert!(p.join("tests").exists(), "No tests/ directory found in {d}");
         return p;
     }
     // Check common locations
@@ -112,7 +110,7 @@ fn ensure_test_suite(dir: Option<&str>) -> PathBuf {
         PathBuf::from("/tmp/JSON-Schema-Test-Suite"),
     ];
     for c in &candidates {
-        if c.join("tests").join("draft2020-12").exists() {
+        if c.join("tests").exists() {
             return c.clone();
         }
     }
@@ -270,40 +268,11 @@ fn print_category_summary(draft: &str, results: &Results) {
     }
 }
 
-fn main() -> Result<()> {
-    // Suppress panic messages from catch_unwind (expected for false_negative/false_positive cases)
-    std::panic::set_hook(Box::new(|_| {}));
+/// Top-level baseline: draft → file → group → test → category
+type Baseline = BTreeMap<String, Results>;
 
-    let args: Vec<String> = std::env::args().collect();
-
-    let mut expected_path: Option<String> = None;
-    let mut suite_dir: Option<String> = None;
-    let mut draft = "draft2020-12".to_string();
-    let mut update = false;
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--expected" => {
-                i += 1;
-                expected_path = Some(args[i].clone());
-            }
-            "--draft" => {
-                i += 1;
-                draft = args[i].clone();
-            }
-            "--update" => {
-                update = true;
-            }
-            arg if !arg.starts_with('-') => {
-                suite_dir = Some(arg.to_string());
-            }
-            other => bail!("Unknown argument: {other}\n\nUsage: json_schema_test_suite [--expected FILE] [--draft DRAFT] [--update] [SUITE_DIR]"),
-        }
-        i += 1;
-    }
-
-    let suite_root = ensure_test_suite(suite_dir.as_deref());
-    let suite_dir = suite_root.join("tests").join(&draft);
+fn run_draft(suite_root: &Path, draft: &str) -> Result<Results> {
+    let suite_dir = suite_root.join("tests").join(draft);
     if !suite_dir.exists() {
         let available: Vec<String> = std::fs::read_dir(suite_root.join("tests"))?
             .filter_map(|e| e.ok())
@@ -342,31 +311,13 @@ fn main() -> Result<()> {
         }
     }
 
-    print_category_summary(&draft, &results);
+    print_category_summary(draft, &results);
+    Ok(results)
+}
 
-    // Compare against baseline if provided
-    let Some(expected) = expected_path else {
-        // No baseline — just print results
-        let json = serde_json::to_string_pretty(&results)?;
-        println!("{json}");
-        return Ok(());
-    };
-
-    let baseline_file = PathBuf::from(&expected);
-    if !baseline_file.exists() {
-        eprintln!("\nNo baseline found at {expected}");
-        eprintln!("Writing current results as new baseline.");
-        let json = serde_json::to_string_pretty(&results)?;
-        std::fs::write(&baseline_file, &json)?;
-        eprintln!("Wrote {expected}");
-        return Ok(());
-    }
-
-    let baseline_content = std::fs::read_to_string(&baseline_file)?;
-    let baseline: Results = serde_json::from_str(&baseline_content)?;
-
-    let (regressions, improvements, new_tests, missing_tests) =
-        compare_results(&results, &baseline);
+/// Check one draft's results against its baseline. Returns true if there are changes.
+fn check_draft(draft: &str, current: &Results, baseline: &Results, update: bool) -> Result<bool> {
+    let (regressions, improvements, new_tests, missing_tests) = compare_results(current, baseline);
 
     let has_changes = !regressions.is_empty()
         || !improvements.is_empty()
@@ -375,37 +326,32 @@ fn main() -> Result<()> {
 
     if has_changes {
         if !regressions.is_empty() {
-            eprintln!("\n--- REGRESSIONS ({}) ---", regressions.len());
+            eprintln!("\n--- {draft}: REGRESSIONS ({}) ---", regressions.len());
             for r in &regressions {
                 eprintln!("  {r}");
             }
         }
         if !improvements.is_empty() {
-            eprintln!("\n--- IMPROVEMENTS ({}) ---", improvements.len());
+            eprintln!("\n--- {draft}: IMPROVEMENTS ({}) ---", improvements.len());
             for i in &improvements {
                 eprintln!("  {i}");
             }
         }
         if !new_tests.is_empty() {
-            eprintln!("\n--- NEW TESTS ({}) ---", new_tests.len());
+            eprintln!("\n--- {draft}: NEW TESTS ({}) ---", new_tests.len());
             for n in &new_tests {
                 eprintln!("  {n}");
             }
         }
         if !missing_tests.is_empty() {
-            eprintln!("\n--- MISSING TESTS ({}) ---", missing_tests.len());
+            eprintln!("\n--- {draft}: MISSING TESTS ({}) ---", missing_tests.len());
             for m in &missing_tests {
                 eprintln!("  {m}");
             }
         }
-        if update {
-            let json = serde_json::to_string_pretty(&results)?;
-            std::fs::write(&baseline_file, &json)?;
-            eprintln!("\nBaseline updated: {expected}");
-        } else {
-            bail!(
-                "Baseline mismatch: {} regressions, {} improvements, {} new, {} missing\n\
-                 Run with --update to update the baseline.",
+        if !update {
+            eprintln!(
+                "\n{draft}: {} regressions, {} improvements, {} new, {} missing",
                 regressions.len(),
                 improvements.len(),
                 new_tests.len(),
@@ -413,7 +359,109 @@ fn main() -> Result<()> {
             );
         }
     } else {
-        eprintln!("\nAll results match baseline. ✓");
+        eprintln!("\n{draft}: all results match baseline. ✓");
+    }
+
+    Ok(has_changes)
+}
+
+fn main() -> Result<()> {
+    // Suppress panic messages from catch_unwind (expected for false_negative/false_positive cases)
+    std::panic::set_hook(Box::new(|_| {}));
+
+    let args: Vec<String> = std::env::args().collect();
+
+    let mut expected_path: Option<String> = None;
+    let mut suite_dir: Option<String> = None;
+    let mut draft: Option<String> = None;
+    let mut update = false;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--expected" => {
+                i += 1;
+                expected_path = Some(args[i].clone());
+            }
+            "--draft" => {
+                i += 1;
+                draft = Some(args[i].clone());
+            }
+            "--update" => {
+                update = true;
+            }
+            arg if !arg.starts_with('-') => {
+                suite_dir = Some(arg.to_string());
+            }
+            other => bail!(
+                "Unknown argument: {other}\n\n\
+                 Usage: json_schema_test_suite [--expected FILE] [--draft DRAFT] [--update] [SUITE_DIR]"
+            ),
+        }
+        i += 1;
+    }
+
+    let suite_root = ensure_test_suite(suite_dir.as_deref());
+
+    // No baseline — run one draft, dump to stdout
+    let Some(expected) = expected_path else {
+        let draft = draft.as_deref().unwrap_or("draft2020-12");
+        let results = run_draft(&suite_root, draft)?;
+        let json = serde_json::to_string_pretty(&results)?;
+        println!("{json}");
+        return Ok(());
+    };
+
+    let baseline_file = PathBuf::from(&expected);
+
+    // Determine which drafts to run
+    let drafts: Vec<String> = if let Some(d) = draft {
+        vec![d]
+    } else if baseline_file.exists() {
+        // Run all drafts present in baseline
+        let content = std::fs::read_to_string(&baseline_file)?;
+        let baseline: Baseline = serde_json::from_str(&content)?;
+        baseline.keys().cloned().collect()
+    } else {
+        // New baseline, no --draft specified — default
+        vec!["draft2020-12".to_string()]
+    };
+
+    // Load or create baseline
+    let mut baseline: Baseline = if baseline_file.exists() {
+        let content = std::fs::read_to_string(&baseline_file)?;
+        serde_json::from_str(&content)?
+    } else {
+        BTreeMap::new()
+    };
+
+    // Run each draft and compare
+    let mut any_changes = false;
+    for d in &drafts {
+        let results = run_draft(&suite_root, d)?;
+        if let Some(base) = baseline.get(d.as_str()) {
+            let changed = check_draft(d, &results, base, update)?;
+            if changed {
+                any_changes = true;
+                if update {
+                    baseline.insert(d.clone(), results);
+                }
+            }
+        } else {
+            // New draft — no baseline yet
+            eprintln!("\n{d}: new draft (no baseline entry)");
+            any_changes = true;
+            if update {
+                baseline.insert(d.clone(), results);
+            }
+        }
+    }
+
+    if update && any_changes {
+        let json = serde_json::to_string_pretty(&baseline)?;
+        std::fs::write(&baseline_file, &json)?;
+        eprintln!("\nBaseline updated: {expected}");
+    } else if any_changes {
+        bail!("Baseline mismatch. Run with --update to update the baseline.");
     }
 
     Ok(())
