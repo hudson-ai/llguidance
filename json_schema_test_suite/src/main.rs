@@ -411,25 +411,20 @@ fn main() -> Result<()> {
 
     let baseline_file = PathBuf::from(&expected);
 
-    // Determine which drafts to run
-    let drafts: Vec<String> = if !drafts_arg.is_empty() {
-        drafts_arg
-    } else if baseline_file.exists() {
-        // Run all drafts present in baseline
-        let content = std::fs::read_to_string(&baseline_file)?;
-        let baseline: Baseline = serde_json::from_str(&content)?;
-        baseline.keys().cloned().collect()
-    } else {
-        // New baseline, no --draft specified — default
-        vec!["draft2020-12".to_string()]
-    };
-
-    // Load or create baseline
+    // Load baseline (if it exists) and determine which drafts to run
     let mut baseline: Baseline = if baseline_file.exists() {
         let content = std::fs::read_to_string(&baseline_file)?;
         serde_json::from_str(&content)?
     } else {
         BTreeMap::new()
+    };
+
+    let drafts: Vec<String> = if !drafts_arg.is_empty() {
+        drafts_arg
+    } else if !baseline.is_empty() {
+        baseline.keys().cloned().collect()
+    } else {
+        vec!["draft2020-12".to_string()]
     };
 
     // Run each draft and compare
