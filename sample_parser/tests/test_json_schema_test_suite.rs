@@ -131,9 +131,11 @@ fn should_skip_group(desc: &str) -> bool {
 type Results = BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>;
 
 /// Run all tests in a file, recording per-test-case results.
-fn run_test_file(path: &Path, results: &mut Results) {
+/// `prefix` is prepended to the key (e.g., "" for core, "optional/format/" for format tests).
+fn run_test_file(path: &Path, prefix: &str, results: &mut Results) {
     let filename = path.file_name().unwrap().to_str().unwrap();
-    let file_key = filename.strip_suffix(".json").unwrap_or(filename).to_string();
+    let stem = filename.strip_suffix(".json").unwrap_or(filename);
+    let file_key = format!("{prefix}{stem}");
 
     let content = std::fs::read_to_string(path).unwrap();
     let groups: Vec<TestGroup> = serde_json::from_str(&content).unwrap();
@@ -290,7 +292,7 @@ fn json_schema_test_suite_draft2020_12() {
     files.sort();
 
     for file in &files {
-        run_test_file(file, &mut results);
+        run_test_file(file, "", &mut results);
     }
 
     // Also run optional format tests
@@ -304,7 +306,7 @@ fn json_schema_test_suite_draft2020_12() {
             .collect();
         format_files.sort();
         for file in &format_files {
-            run_test_file(file, &mut results);
+            run_test_file(file, "optional/format/", &mut results);
         }
     }
 
