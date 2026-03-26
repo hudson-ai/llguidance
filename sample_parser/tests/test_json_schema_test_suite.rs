@@ -132,17 +132,18 @@ type Results = BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>;
 
 /// Run all tests in a file, recording per-test-case results.
 fn run_test_file(path: &Path, results: &mut Results) {
-    let filename = path.file_name().unwrap().to_str().unwrap().to_string();
+    let filename = path.file_name().unwrap().to_str().unwrap();
+    let file_key = filename.strip_suffix(".json").unwrap_or(filename).to_string();
 
     let content = std::fs::read_to_string(path).unwrap();
     let groups: Vec<TestGroup> = serde_json::from_str(&content).unwrap();
 
-    let file_results = results.entry(filename.clone()).or_default();
+    let file_results = results.entry(file_key.clone()).or_default();
 
     for group in &groups {
         let group_results = file_results.entry(group.description.clone()).or_default();
 
-        if should_skip_file(&filename) || should_skip_group(&group.description) {
+        if should_skip_file(filename) || should_skip_group(&group.description) {
             for test in &group.tests {
                 group_results.insert(test.description.clone(), "skip".to_string());
             }

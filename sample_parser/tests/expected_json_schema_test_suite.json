@@ -1,5 +1,5 @@
 {
-  "additionalProperties.json": {
+  "additionalProperties": {
     "additionalProperties are allowed by default": {
       "additional properties are allowed": "pass"
     },
@@ -40,7 +40,7 @@
       "not matching the pattern is invalid": "pass"
     }
   },
-  "allOf.json": {
+  "allOf": {
     "allOf": {
       "allOf": "false_negative",
       "mismatch first": "pass",
@@ -96,7 +96,7 @@
       "null is valid": "pass"
     }
   },
-  "anchor.json": {
+  "anchor": {
     "Location-independent identifier": {
       "match": "skip",
       "mismatch": "skip"
@@ -114,7 +114,7 @@
       "$ref resolves to /$defs/A/allOf/1": "pass"
     }
   },
-  "anyOf.json": {
+  "anyOf": {
     "anyOf": {
       "both anyOf valid": "pass",
       "first anyOf valid": "pass",
@@ -150,7 +150,7 @@
       "null is valid": "pass"
     }
   },
-  "boolean_schema.json": {
+  "boolean_schema": {
     "boolean schema 'false'": {
       "array is invalid": "compile_error_all_invalid",
       "boolean false is invalid": "compile_error_all_invalid",
@@ -174,7 +174,7 @@
       "string is valid": "pass"
     }
   },
-  "const.json": {
+  "const": {
     "characters with the same visual representation but different codepoint": {
       "character looks the same but uses a different codepoint": "pass",
       "character uses the same codepoint": "pass"
@@ -264,7 +264,7 @@
       "match string with nul": "pass"
     }
   },
-  "contains.json": {
+  "contains": {
     "contains keyword validation": {
       "array with item matching schema (5) is valid": "skip",
       "array with item matching schema (6) is valid": "skip",
@@ -301,7 +301,7 @@
       "matches neither items nor contains": "skip"
     }
   },
-  "content.json": {
+  "content": {
     "validation of binary string-encoding": {
       "a valid base64 string": "pass",
       "an invalid base64 string (% is not a valid character); validates true": "pass",
@@ -329,40 +329,7 @@
       "ignores non-strings": "pass"
     }
   },
-  "date-time.json": {
-    "validation of date-time strings": {
-      "a valid date-time string": "pass",
-      "a valid date-time string with minus offset": "pass",
-      "a valid date-time string with plus offset": "pass",
-      "a valid date-time string without second fraction": "pass",
-      "a valid date-time with a leap second, UTC": "pass",
-      "a valid date-time with a leap second, with minus offset": "pass",
-      "all string formats ignore arrays": "pass",
-      "all string formats ignore booleans": "pass",
-      "all string formats ignore floats": "pass",
-      "all string formats ignore integers": "pass",
-      "all string formats ignore nulls": "pass",
-      "all string formats ignore objects": "pass",
-      "an invalid closing Z after time-zone offset": "pass",
-      "an invalid date-time past leap second, UTC": "pass",
-      "an invalid date-time string": "pass",
-      "an invalid date-time with leap second on a wrong hour, UTC": "false_positive",
-      "an invalid date-time with leap second on a wrong minute, UTC": "false_positive",
-      "an invalid day in date-time string": "pass",
-      "an invalid hour in date-time string": "pass",
-      "an invalid minute in date-time string": "pass",
-      "an invalid offset in date-time string": "pass",
-      "an invalid offset minute in date-time string": "pass",
-      "case-insensitive T and Z": "pass",
-      "invalid extended year": "pass",
-      "invalid non-ASCII '৪' (a Bengali 4) in date portion": "pass",
-      "invalid non-ASCII '৪' (a Bengali 4) in time portion": "pass",
-      "invalid non-padded day dates": "pass",
-      "invalid non-padded month dates": "pass",
-      "only RFC3339 not all of ISO 8601 are valid": "pass"
-    }
-  },
-  "date.json": {
+  "date": {
     "validation of date strings": {
       "2020 is a leap year": "pass",
       "2021 is not a leap year": "false_positive",
@@ -414,7 +381,40 @@
       "only RFC3339 not all of ISO 8601 are valid": "pass"
     }
   },
-  "default.json": {
+  "date-time": {
+    "validation of date-time strings": {
+      "a valid date-time string": "pass",
+      "a valid date-time string with minus offset": "pass",
+      "a valid date-time string with plus offset": "pass",
+      "a valid date-time string without second fraction": "pass",
+      "a valid date-time with a leap second, UTC": "pass",
+      "a valid date-time with a leap second, with minus offset": "pass",
+      "all string formats ignore arrays": "pass",
+      "all string formats ignore booleans": "pass",
+      "all string formats ignore floats": "pass",
+      "all string formats ignore integers": "pass",
+      "all string formats ignore nulls": "pass",
+      "all string formats ignore objects": "pass",
+      "an invalid closing Z after time-zone offset": "pass",
+      "an invalid date-time past leap second, UTC": "pass",
+      "an invalid date-time string": "pass",
+      "an invalid date-time with leap second on a wrong hour, UTC": "false_positive",
+      "an invalid date-time with leap second on a wrong minute, UTC": "false_positive",
+      "an invalid day in date-time string": "pass",
+      "an invalid hour in date-time string": "pass",
+      "an invalid minute in date-time string": "pass",
+      "an invalid offset in date-time string": "pass",
+      "an invalid offset minute in date-time string": "pass",
+      "case-insensitive T and Z": "pass",
+      "invalid extended year": "pass",
+      "invalid non-ASCII '৪' (a Bengali 4) in date portion": "pass",
+      "invalid non-ASCII '৪' (a Bengali 4) in time portion": "pass",
+      "invalid non-padded day dates": "pass",
+      "invalid non-padded month dates": "pass",
+      "only RFC3339 not all of ISO 8601 are valid": "pass"
+    }
+  },
+  "default": {
     "invalid string value for default": {
       "still valid when the invalid default is used": "pass",
       "valid when property is specified": "pass"
@@ -429,13 +429,13 @@
       "missing properties are not filled in with the default": "pass"
     }
   },
-  "defs.json": {
+  "defs": {
     "validate definition against metaschema": {
       "invalid definition schema": "skip_compile",
       "valid definition schema": "skip_compile"
     }
   },
-  "dependentRequired.json": {
+  "dependentRequired": {
     "dependencies with escaped characters": {
       "CRLF": "skip",
       "CRLF missing dependent": "skip",
@@ -465,7 +465,7 @@
       "with dependency": "skip"
     }
   },
-  "dependentSchemas.json": {
+  "dependentSchemas": {
     "boolean subschemas": {
       "empty object is valid": "skip",
       "object with both properties is invalid": "skip",
@@ -495,7 +495,7 @@
       "wrong type other": "skip"
     }
   },
-  "duration.json": {
+  "duration": {
     "validation of duration strings": {
       "a valid duration string": "pass",
       "all date and time components": "pass",
@@ -541,7 +541,7 @@
       "zero time, in seconds": "pass"
     }
   },
-  "dynamicRef.json": {
+  "dynamicRef": {
     "$dynamicRef avoids the root of each schema, but scopes are still registered": {
       "data is not sufficient for schema at second#/$defs/length": "skip",
       "data is sufficient for schema at second#/$defs/length": "skip"
@@ -629,12 +629,12 @@
       "incorrect parent schema": "skip"
     }
   },
-  "ecmascript-regex.json": {
+  "ecmascript-regex": {
     "\\a is not an ECMA 262 control escape": {
       "when used as a pattern": "compile_error_all_invalid"
     }
   },
-  "email.json": {
+  "email": {
     "validation of e-mail addresses": {
       "a quoted string with a @ in the local part is valid": "false_negative",
       "a quoted string with a double dot in the local part is valid": "false_negative",
@@ -665,7 +665,7 @@
       "unquoted space in local part is invalid": "pass"
     }
   },
-  "enum.json": {
+  "enum": {
     "empty enum": {
       "array is invalid": "compile_error_all_invalid",
       "boolean is invalid": "compile_error_all_invalid",
@@ -748,7 +748,7 @@
       "something else is invalid": "pass"
     }
   },
-  "exclusiveMaximum.json": {
+  "exclusiveMaximum": {
     "exclusiveMaximum validation": {
       "above the exclusiveMaximum is invalid": "pass",
       "below the exclusiveMaximum is valid": "pass",
@@ -756,7 +756,7 @@
       "ignores non-numbers": "pass"
     }
   },
-  "exclusiveMinimum.json": {
+  "exclusiveMinimum": {
     "exclusiveMinimum validation": {
       "above the exclusiveMinimum is valid": "pass",
       "below the exclusiveMinimum is invalid": "pass",
@@ -764,7 +764,7 @@
       "ignores non-numbers": "pass"
     }
   },
-  "format.json": {
+  "format": {
     "date format": {
       "all string formats ignore arrays": "pass",
       "all string formats ignore booleans": "pass",
@@ -937,7 +937,7 @@
       "invalid uuid string is only an annotation by default": "false_negative"
     }
   },
-  "hostname.json": {
+  "hostname": {
     "validation of A-label (punycode) host names": {
       "Arabic-Indic digits mixed with Extended Arabic-Indic digits": "false_positive",
       "Arabic-Indic digits not mixed with Extended Arabic-Indic digits": "pass",
@@ -1004,7 +1004,7 @@
       "trailing dot": "pass"
     }
   },
-  "idn-email.json": {
+  "idn-email": {
     "validation of an internationalized e-mail addresses": {
       "a valid e-mail address": "compile_error_valid",
       "a valid idn e-mail (example@example.test in Hangul)": "compile_error_valid",
@@ -1018,7 +1018,7 @@
       "an invalid idn e-mail address": "compile_error_valid"
     }
   },
-  "idn-hostname.json": {
+  "idn-hostname": {
     "validation of internationalized host names": {
       "Arabic-Indic digits mixed with Extended Arabic-Indic digits": "compile_error_valid",
       "Arabic-Indic digits not mixed with Extended Arabic-Indic digits": "compile_error_valid",
@@ -1101,7 +1101,7 @@
       "trailing ideographic full stop": "compile_error_valid"
     }
   },
-  "if-then-else.json": {
+  "if-then-else": {
     "else: false fails when condition does not match": {
       "does not match if → else executes → invalid": "skip",
       "matches if → else ignored → valid": "skip"
@@ -1157,13 +1157,13 @@
       "valid through then": "skip"
     }
   },
-  "infinite-loop-detection.json": {
+  "infinite-loop-detection": {
     "evaluating the same schema location against the same data location twice is not a sign of an infinite loop": {
       "failing case": "skip",
       "passing case": "skip"
     }
   },
-  "ipv4.json": {
+  "ipv4": {
     "validation of IP addresses": {
       "a valid IP address": "pass",
       "all string formats ignore arrays": "pass",
@@ -1200,7 +1200,7 @@
       "with port number is invalid": "pass"
     }
   },
-  "ipv6.json": {
+  "ipv6": {
     "validation of IPv6 addresses": {
       "8 octets": "pass",
       "a long invalid ipv6, below length limit, first": "pass",
@@ -1244,24 +1244,7 @@
       "zone id is not a part of ipv6 address": "pass"
     }
   },
-  "iri-reference.json": {
-    "validation of IRI References": {
-      "a valid IRI": "compile_error_valid",
-      "a valid IRI Reference": "compile_error_valid",
-      "a valid IRI fragment": "compile_error_valid",
-      "a valid protocol-relative IRI Reference": "compile_error_valid",
-      "a valid relative IRI Reference": "compile_error_valid",
-      "all string formats ignore arrays": "compile_error_valid",
-      "all string formats ignore booleans": "compile_error_valid",
-      "all string formats ignore floats": "compile_error_valid",
-      "all string formats ignore integers": "compile_error_valid",
-      "all string formats ignore nulls": "compile_error_valid",
-      "all string formats ignore objects": "compile_error_valid",
-      "an invalid IRI Reference": "compile_error_valid",
-      "an invalid IRI fragment": "compile_error_valid"
-    }
-  },
-  "iri.json": {
+  "iri": {
     "validation of IRIs": {
       "a valid IRI based on IPv6": "compile_error_valid",
       "a valid IRI with URL-encoded stuff": "compile_error_valid",
@@ -1280,7 +1263,24 @@
       "an invalid relative IRI Reference": "compile_error_valid"
     }
   },
-  "items.json": {
+  "iri-reference": {
+    "validation of IRI References": {
+      "a valid IRI": "compile_error_valid",
+      "a valid IRI Reference": "compile_error_valid",
+      "a valid IRI fragment": "compile_error_valid",
+      "a valid protocol-relative IRI Reference": "compile_error_valid",
+      "a valid relative IRI Reference": "compile_error_valid",
+      "all string formats ignore arrays": "compile_error_valid",
+      "all string formats ignore booleans": "compile_error_valid",
+      "all string formats ignore floats": "compile_error_valid",
+      "all string formats ignore integers": "compile_error_valid",
+      "all string formats ignore nulls": "compile_error_valid",
+      "all string formats ignore objects": "compile_error_valid",
+      "an invalid IRI Reference": "compile_error_valid",
+      "an invalid IRI fragment": "compile_error_valid"
+    }
+  },
+  "items": {
     "a schema given for items": {
       "JavaScript pseudo-array is valid": "pass",
       "ignores non-arrays": "pass",
@@ -1331,7 +1331,7 @@
       "fewer number of items present (2)": "pass"
     }
   },
-  "json-pointer.json": {
+  "json-pointer": {
     "validation of JSON-pointers (JSON String Representation)": {
       "a valid JSON-pointer": "compile_error_valid",
       "all string formats ignore arrays": "compile_error_valid",
@@ -1373,7 +1373,7 @@
       "valid JSON-pointer with the last empty segment": "compile_error_valid"
     }
   },
-  "maxContains.json": {
+  "maxContains": {
     "maxContains = 0 with minContains = 0": {
       "empty array": "skip",
       "one matching item": "skip"
@@ -1399,7 +1399,7 @@
       "minContains < maxContains < actual": "skip"
     }
   },
-  "maxItems.json": {
+  "maxItems": {
     "maxItems validation": {
       "exact length is valid": "pass",
       "ignores non-arrays": "pass",
@@ -1411,7 +1411,7 @@
       "too long is invalid": "compile_error_valid"
     }
   },
-  "maxLength.json": {
+  "maxLength": {
     "maxLength validation": {
       "exact length is valid": "pass",
       "ignores non-strings": "pass",
@@ -1424,7 +1424,7 @@
       "too long is invalid": "compile_error_valid"
     }
   },
-  "maxProperties.json": {
+  "maxProperties": {
     "maxProperties = 0 means the object is empty": {
       "no properties is valid": "pass",
       "one property is invalid": "pass"
@@ -1442,7 +1442,7 @@
       "too long is invalid": "compile_error_valid"
     }
   },
-  "maximum.json": {
+  "maximum": {
     "maximum validation": {
       "above the maximum is invalid": "pass",
       "below the maximum is valid": "pass",
@@ -1456,7 +1456,7 @@
       "boundary point integer is valid": "pass"
     }
   },
-  "minContains.json": {
+  "minContains": {
     "maxContains < minContains": {
       "empty data": "skip",
       "invalid maxContains": "skip",
@@ -1502,7 +1502,7 @@
       "one element matches, invalid minContains": "skip"
     }
   },
-  "minItems.json": {
+  "minItems": {
     "minItems validation": {
       "exact length is valid": "pass",
       "ignores non-arrays": "pass",
@@ -1514,7 +1514,7 @@
       "too short is invalid": "compile_error_valid"
     }
   },
-  "minLength.json": {
+  "minLength": {
     "minLength validation": {
       "exact length is valid": "pass",
       "ignores non-strings": "pass",
@@ -1527,7 +1527,7 @@
       "too short is invalid": "compile_error_valid"
     }
   },
-  "minProperties.json": {
+  "minProperties": {
     "minProperties validation": {
       "exact length is valid": "pass",
       "ignores arrays": "pass",
@@ -1541,7 +1541,7 @@
       "too short is invalid": "compile_error_valid"
     }
   },
-  "minimum.json": {
+  "minimum": {
     "minimum validation": {
       "above the minimum is valid": "pass",
       "below the minimum is invalid": "pass",
@@ -1558,7 +1558,7 @@
       "positive above the minimum is valid": "pass"
     }
   },
-  "multipleOf.json": {
+  "multipleOf": {
     "by int": {
       "ignores non-numbers": "pass",
       "int by int": "pass",
@@ -1580,7 +1580,7 @@
       "any integer is a multiple of 1e-8": "pass"
     }
   },
-  "not.json": {
+  "not": {
     "allow everything with boolean schema false": {
       "array is valid": "skip",
       "boolean false is valid": "skip",
@@ -1640,7 +1640,7 @@
       "valid": "skip"
     }
   },
-  "oneOf.json": {
+  "oneOf": {
     "nested oneOf, to check validation semantics": {
       "anything non-null is invalid": "pass",
       "null is valid": "pass"
@@ -1691,7 +1691,7 @@
       "second valid - valid": "skip_compile"
     }
   },
-  "pattern.json": {
+  "pattern": {
     "pattern is not anchored": {
       "matches a substring": "pass"
     },
@@ -1711,7 +1711,7 @@
       "Non-ASCII letters match": "pass"
     }
   },
-  "patternProperties.json": {
+  "patternProperties": {
     "multiple simultaneous patternProperties are validated": {
       "a simultaneous match is valid": "compile_error_valid",
       "a single valid match is valid": "compile_error_valid",
@@ -1750,7 +1750,7 @@
       "regexes are case sensitive, 2": "compile_error_valid"
     }
   },
-  "prefixItems.json": {
+  "prefixItems": {
     "a schema given for prefixItems": {
       "JavaScript pseudo-array is valid": "pass",
       "array with additional items": "pass",
@@ -1771,7 +1771,7 @@
       "allows null elements": "pass"
     }
   },
-  "properties.json": {
+  "properties": {
     "object properties validation": {
       "both properties invalid is invalid": "pass",
       "both properties present and valid is valid": "pass",
@@ -1813,7 +1813,7 @@
       "property validates property": "pass"
     }
   },
-  "propertyNames.json": {
+  "propertyNames": {
     "propertyNames validation": {
       "all property names valid": "skip",
       "ignores arrays": "skip",
@@ -1847,7 +1847,7 @@
       "object with property foo is valid": "skip"
     }
   },
-  "ref.json": {
+  "ref": {
     "$id must be resolved against nearest parent, not just immediate parent": {
       "non-number is invalid": "pass",
       "number is valid": "pass"
@@ -2000,7 +2000,7 @@
       "a string is valid": "pass"
     }
   },
-  "refRemote.json": {
+  "refRemote": {
     "$ref to $ref finds detached $anchor": {
       "non-number is invalid": "skip",
       "number is valid": "skip"
@@ -2063,7 +2063,7 @@
       "string is valid": "skip"
     }
   },
-  "regex.json": {
+  "regex": {
     "validation of regular expressions": {
       "a regular expression with unclosed parens is invalid": "compile_error_valid",
       "a valid regular expression": "compile_error_valid",
@@ -2075,7 +2075,7 @@
       "all string formats ignore objects": "compile_error_valid"
     }
   },
-  "relative-json-pointer.json": {
+  "relative-json-pointer": {
     "validation of Relative JSON Pointers (RJP)": {
       "## is not a valid json-pointer": "compile_error_valid",
       "a valid RJP taking the member or index name": "compile_error_valid",
@@ -2097,7 +2097,7 @@
       "zero cannot be followed by other digits, plus octothorpe": "compile_error_valid"
     }
   },
-  "required.json": {
+  "required": {
     "required default validation": {
       "not required by default": "pass"
     },
@@ -2127,7 +2127,7 @@
       "object with some properties missing is invalid": "pass"
     }
   },
-  "time.json": {
+  "time": {
     "validation of time strings": {
       "a valid time string": "pass",
       "a valid time string with case-insensitive Z": "pass",
@@ -2178,7 +2178,7 @@
       "valid leap second, zero time-offset": "pass"
     }
   },
-  "type.json": {
+  "type": {
     "array type matches arrays": {
       "a boolean is not an array": "pass",
       "a float is not an array": "pass",
@@ -2282,7 +2282,7 @@
       "string is invalid": "pass"
     }
   },
-  "unevaluatedItems.json": {
+  "unevaluatedItems": {
     "Evaluated items collection needs to consider instance location": {
       "with an unevaluated item that exists at another location": "skip"
     },
@@ -2413,7 +2413,7 @@
       "unevaluatedItems doesn't apply": "skip"
     }
   },
-  "unevaluatedProperties.json": {
+  "unevaluatedProperties": {
     "Evaluated properties collection needs to consider instance location": {
       "with an unevaluated property that exists at another location": "skip"
     },
@@ -2624,7 +2624,7 @@
       "with unevaluated properties": "skip"
     }
   },
-  "uniqueItems.json": {
+  "uniqueItems": {
     "uniqueItems validation": {
       "0 and false are unique": "skip",
       "1 and true are unique": "skip",
@@ -2707,7 +2707,7 @@
       "extra items are invalid even if unique": "skip"
     }
   },
-  "unknown.json": {
+  "unknown": {
     "unknown format": {
       "unknown formats ignore arrays": "pass",
       "unknown formats ignore booleans": "pass",
@@ -2718,42 +2718,7 @@
       "unknown formats ignore strings": "pass"
     }
   },
-  "uri-reference.json": {
-    "validation of URI References": {
-      "URI with leading-zero IPv4 is structurally valid as a reg-name": "compile_error_valid",
-      "URI with out-of-bounds IPv4 is structurally valid as a reg-name": "compile_error_valid",
-      "a valid URI": "compile_error_valid",
-      "a valid URI Reference": "compile_error_valid",
-      "a valid URI fragment": "compile_error_valid",
-      "a valid protocol-relative URI Reference": "compile_error_valid",
-      "a valid relative URI Reference": "compile_error_valid",
-      "all string formats ignore arrays": "compile_error_valid",
-      "all string formats ignore booleans": "compile_error_valid",
-      "all string formats ignore floats": "compile_error_valid",
-      "all string formats ignore integers": "compile_error_valid",
-      "all string formats ignore nulls": "compile_error_valid",
-      "all string formats ignore objects": "compile_error_valid",
-      "an invalid URI Reference": "compile_error_valid",
-      "an invalid URI fragment": "compile_error_valid",
-      "invalid backslash character": "compile_error_valid",
-      "unescaped non US-ASCII characters": "compile_error_valid"
-    }
-  },
-  "uri-template.json": {
-    "format: uri-template": {
-      "a valid relative uri-template": "compile_error_valid",
-      "a valid uri-template": "compile_error_valid",
-      "a valid uri-template without variables": "compile_error_valid",
-      "all string formats ignore arrays": "compile_error_valid",
-      "all string formats ignore booleans": "compile_error_valid",
-      "all string formats ignore floats": "compile_error_valid",
-      "all string formats ignore integers": "compile_error_valid",
-      "all string formats ignore nulls": "compile_error_valid",
-      "all string formats ignore objects": "compile_error_valid",
-      "an invalid uri-template": "compile_error_valid"
-    }
-  },
-  "uri.json": {
+  "uri": {
     "validation of URIs": {
       "URI with leading-zero IPv4 is structurally valid as a reg-name": "pass",
       "URI with out-of-bounds IPv4 is structurally valid as a reg-name": "pass",
@@ -2801,7 +2766,42 @@
       "unescaped non US-ASCII characters": "pass"
     }
   },
-  "uuid.json": {
+  "uri-reference": {
+    "validation of URI References": {
+      "URI with leading-zero IPv4 is structurally valid as a reg-name": "compile_error_valid",
+      "URI with out-of-bounds IPv4 is structurally valid as a reg-name": "compile_error_valid",
+      "a valid URI": "compile_error_valid",
+      "a valid URI Reference": "compile_error_valid",
+      "a valid URI fragment": "compile_error_valid",
+      "a valid protocol-relative URI Reference": "compile_error_valid",
+      "a valid relative URI Reference": "compile_error_valid",
+      "all string formats ignore arrays": "compile_error_valid",
+      "all string formats ignore booleans": "compile_error_valid",
+      "all string formats ignore floats": "compile_error_valid",
+      "all string formats ignore integers": "compile_error_valid",
+      "all string formats ignore nulls": "compile_error_valid",
+      "all string formats ignore objects": "compile_error_valid",
+      "an invalid URI Reference": "compile_error_valid",
+      "an invalid URI fragment": "compile_error_valid",
+      "invalid backslash character": "compile_error_valid",
+      "unescaped non US-ASCII characters": "compile_error_valid"
+    }
+  },
+  "uri-template": {
+    "format: uri-template": {
+      "a valid relative uri-template": "compile_error_valid",
+      "a valid uri-template": "compile_error_valid",
+      "a valid uri-template without variables": "compile_error_valid",
+      "all string formats ignore arrays": "compile_error_valid",
+      "all string formats ignore booleans": "compile_error_valid",
+      "all string formats ignore floats": "compile_error_valid",
+      "all string formats ignore integers": "compile_error_valid",
+      "all string formats ignore nulls": "compile_error_valid",
+      "all string formats ignore objects": "compile_error_valid",
+      "an invalid uri-template": "compile_error_valid"
+    }
+  },
+  "uuid": {
     "uuid format": {
       "all lower-case": "pass",
       "all string formats ignore arrays": "pass",
@@ -2827,7 +2827,7 @@
       "wrong length": "pass"
     }
   },
-  "vocabulary.json": {
+  "vocabulary": {
     "ignore unrecognized optional vocabulary": {
       "number value": "skip",
       "string value": "skip"
