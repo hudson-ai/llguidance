@@ -45,22 +45,22 @@ struct TestCase {
 /// Files we know we don't support (features not implemented in llguidance).
 const SKIP_FILES: &[&str] = &[
     // Not implemented
-    "not.json",
-    "if-then-else.json",
-    "dependentRequired.json",
-    "dependentSchemas.json",
-    "contains.json",
-    "minContains.json",
-    "maxContains.json",
-    "unevaluatedItems.json",
-    "unevaluatedProperties.json",
-    "propertyNames.json",
-    "uniqueItems.json",
-    "dynamicRef.json",
-    "vocabulary.json",
-    "infinite-loop-detection.json",
+    "not",
+    "if-then-else",
+    "dependentRequired",
+    "dependentSchemas",
+    "contains",
+    "minContains",
+    "maxContains",
+    "unevaluatedItems",
+    "unevaluatedProperties",
+    "propertyNames",
+    "uniqueItems",
+    "dynamicRef",
+    "vocabulary",
+    "infinite-loop-detection",
     // Remote refs require a retriever
-    "refRemote.json",
+    "refRemote",
 ];
 
 /// Groups we skip by description substring (e.g., features we don't handle).
@@ -145,7 +145,7 @@ fn run_test_file(path: &Path, prefix: &str, results: &mut Results) {
     for group in &groups {
         let group_results = file_results.entry(group.description.clone()).or_default();
 
-        if should_skip_file(filename) || should_skip_group(&group.description) {
+        if should_skip_file(&file_key) || should_skip_group(&group.description) {
             for test in &group.tests {
                 group_results.insert(test.description.clone(), "skip".to_string());
             }
@@ -335,7 +335,11 @@ fn json_schema_test_suite_draft2020_12() {
             current_path.display(),
             baseline_file.display()
         );
-        // Don't fail — allow first run without baseline
+        // Don't fail — allow first run without baseline locally,
+        // but fail in CI where the baseline should always be committed.
+        if std::env::var("CI").is_ok() {
+            panic!("No baseline found in CI — expected_json_schema_test_suite.json must be committed");
+        }
         return;
     }
 
