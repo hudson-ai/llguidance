@@ -127,20 +127,24 @@ fn should_skip_group(desc: &str) -> bool {
     SKIP_GROUPS.iter().any(|skip| desc.contains(skip))
 }
 
+/// Nested results: file → group → test → category
+type Results = BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>;
+
 /// Run all tests in a file, recording per-test-case results.
-fn run_test_file(path: &Path, results: &mut BTreeMap<String, String>) {
-    let filename = path.file_name().unwrap().to_str().unwrap();
+fn run_test_file(path: &Path, results: &mut Results) {
+    let filename = path.file_name().unwrap().to_str().unwrap().to_string();
 
     let content = std::fs::read_to_string(path).unwrap();
     let groups: Vec<TestGroup> = serde_json::from_str(&content).unwrap();
 
-    for group in &groups {
-        let group_id = format!("{filename} / {}", group.description);
+    let file_results = results.entry(filename.clone()).or_default();
 
-        if should_skip_file(filename) || should_skip_group(&group.description) {
+    for group in &groups {
+        let group_results = file_results.entry(group.description.clone()).or_default();
+
+        if should_skip_file(&filename) || should_skip_group(&group.description) {
             for test in &group.tests {
-                let test_id = format!("{group_id} / {}", test.description);
-                results.insert(test_id, "skip".to_string());
+                group_results.insert(test.description.clone(), "skip".to_string());
             }
             continue;
         }
@@ -160,7 +164,6 @@ fn run_test_file(path: &Path, results: &mut BTreeMap<String, String>) {
                 let has_valid = group.tests.iter().any(|t| t.valid);
 
                 for test in &group.tests {
-                    let test_id = format!("{group_id} / {}", test.description);
                     let category = if is_unimplemented {
                         "skip_compile"
                     } else if has_valid {
@@ -168,12 +171,11 @@ fn run_test_file(path: &Path, results: &mut BTreeMap<String, String>) {
                     } else {
                         "compile_error_all_invalid"
                     };
-                    results.insert(test_id, category.to_string());
+                    group_results.insert(test.description.clone(), category.to_string());
                 }
             }
             Ok(_) => {
                 for test in &group.tests {
-                    let test_id = format!("{group_id} / {}", test.description);
 
                     let result = std::panic::catch_unwind(|| {
                         json_schema_check(&group.schema, &test.data, test.valid);
@@ -188,25 +190,40 @@ fn run_test_file(path: &Path, results: &mut BTreeMap<String, String>) {
                             }
                         }
                     };
-                    results.insert(test_id, category.to_string());
+                    group_results.insert(test.description.clone(), category.to_string());
                 }
             }
         }
     }
 }
 
+/// Flatten nested results into (test_path, category) pairs for comparison.
+fn flatten(results: &Results) -> BTreeMap<String, String> {
+    let mut flat = BTreeMap::new();
+    for (file, groups) in results {
+        for (group, tests) in groups {
+            for (test, cat) in tests {
+                flat.insert(format!("{file} / {group} / {test}"), cat.clone());
+            }
+        }
+    }
+    flat
+}
+
 /// Compare current results against baseline. Returns (regressions, improvements, new, missing).
 fn compare_results(
-    current: &BTreeMap<String, String>,
-    baseline: &BTreeMap<String, String>,
+    current: &Results,
+    baseline: &Results,
 ) -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
+    let cur_flat = flatten(current);
+    let base_flat = flatten(baseline);
     let mut regressions = Vec::new();
     let mut improvements = Vec::new();
     let mut new_tests = Vec::new();
     let mut missing_tests = Vec::new();
 
-    for (test_id, cur_cat) in current {
-        match baseline.get(test_id) {
+    for (test_id, cur_cat) in &cur_flat {
+        match base_flat.get(test_id) {
             Some(base_cat) => {
                 if cur_cat != base_cat {
                     let cur_bad = category_badness(cur_cat);
@@ -224,28 +241,31 @@ fn compare_results(
         }
     }
 
-    for test_id in baseline.keys() {
-        if !current.contains_key(test_id) {
-            missing_tests.push(format!(
-                "{test_id}: was {}",
-                baseline.get(test_id).unwrap()
-            ));
+    for (test_id, base_cat) in &base_flat {
+        if !cur_flat.contains_key(test_id) {
+            missing_tests.push(format!("{test_id}: was {base_cat}"));
         }
     }
 
     (regressions, improvements, new_tests, missing_tests)
 }
 
-fn print_category_summary(results: &BTreeMap<String, String>) {
+fn print_category_summary(results: &Results) {
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
     for cat in CATEGORIES {
         counts.insert(cat, 0);
     }
-    for cat in results.values() {
-        *counts.entry(cat.as_str()).or_insert(0) += 1;
+    let mut total = 0;
+    for groups in results.values() {
+        for tests in groups.values() {
+            for cat in tests.values() {
+                *counts.entry(cat.as_str()).or_insert(0) += 1;
+                total += 1;
+            }
+        }
     }
     eprintln!("\n=== JSON Schema Test Suite (draft2020-12) ===");
-    eprintln!("Total: {}", results.len());
+    eprintln!("Total: {total}");
     for (cat, count) in &counts {
         if *count > 0 {
             eprintln!("  {cat:30} {count}");
@@ -257,7 +277,7 @@ fn print_category_summary(results: &BTreeMap<String, String>) {
 fn json_schema_test_suite_draft2020_12() {
     let suite_root = ensure_test_suite();
     let suite_dir = suite_root.join("tests").join("draft2020-12");
-    let mut results: BTreeMap<String, String> = BTreeMap::new();
+    let mut results: Results = BTreeMap::new();
 
     // Collect JSON test files from main suite dir
     let mut files: Vec<PathBuf> = std::fs::read_dir(&suite_dir)
@@ -317,7 +337,7 @@ fn json_schema_test_suite_draft2020_12() {
     }
 
     let baseline_content = std::fs::read_to_string(&baseline_file).unwrap();
-    let baseline: BTreeMap<String, String> =
+    let baseline: Results =
         serde_json::from_str(&baseline_content).expect("Failed to parse baseline JSON");
 
     let (regressions, improvements, new_tests, missing_tests) =
