@@ -57,7 +57,7 @@ fn category_badness(cat: &str) -> usize {
     CATEGORIES
         .iter()
         .position(|&c| c == cat)
-        .unwrap_or(usize::MAX)
+        .unwrap_or_else(|| panic!("Unknown result category '{cat}'. Valid: {CATEGORIES:?}"))
 }
 
 fn make_parser(lark: &str) -> anyhow::Result<TokenParser> {
@@ -83,9 +83,7 @@ fn json_schema_check(schema: &Value, json_obj: &Value, expect_valid: bool) {
         let m = p.compute_mask().unwrap();
         if m.is_allowed(*tok) {
             let n = p.consume_token(*tok).unwrap();
-            for _ in 0..n {
-                p.compute_mask().unwrap();
-            }
+            assert_eq!(n, 0, "Backtracking not supported in json_schema_check");
         } else {
             let curr_tok_str = trie.token_dbg(*tok);
             assert!(
@@ -401,11 +399,13 @@ fn main() -> Result<()> {
         if drafts_arg.is_empty() {
             drafts_arg.push("draft2020-12".to_string());
         }
+        let mut by_draft = BTreeMap::new();
         for d in &drafts_arg {
             let results = run_draft(&suite_root, d)?;
-            let json = serde_json::to_string_pretty(&results)?;
-            println!("{json}");
+            by_draft.insert(d.clone(), results);
         }
+        let json = serde_json::to_string_pretty(&by_draft)?;
+        println!("{json}");
         return Ok(());
     };
 
