@@ -83,7 +83,10 @@ const CATEGORIES: &[&str] = &[
 ];
 
 fn category_badness(cat: &str) -> usize {
-    CATEGORIES.iter().position(|&c| c == cat).unwrap_or(usize::MAX)
+    CATEGORIES
+        .iter()
+        .position(|&c| c == cat)
+        .unwrap_or(usize::MAX)
 }
 
 fn ensure_test_suite() -> PathBuf {
@@ -179,7 +182,6 @@ fn run_test_file(path: &Path, prefix: &str, results: &mut Results) {
             }
             Ok(_) => {
                 for test in &group.tests {
-
                     let result = std::panic::catch_unwind(|| {
                         json_schema_check(&group.schema, &test.data, test.valid);
                     });
@@ -287,7 +289,7 @@ fn json_schema_test_suite_draft2020_12() {
         .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().map_or(false, |ext| ext == "json"))
+        .filter(|p| p.extension().is_some_and(|ext| ext == "json"))
         .collect();
     files.sort();
 
@@ -302,7 +304,7 @@ fn json_schema_test_suite_draft2020_12() {
             .unwrap()
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| p.extension().map_or(false, |ext| ext == "json"))
+            .filter(|p| p.extension().is_some_and(|ext| ext == "json"))
             .collect();
         format_files.sort();
         for file in &format_files {
@@ -325,10 +327,7 @@ fn json_schema_test_suite_draft2020_12() {
     // Compare against baseline if it exists
     let baseline_file = baseline_path();
     if !baseline_file.exists() {
-        eprintln!(
-            "\nNo baseline found at {}",
-            baseline_file.display()
-        );
+        eprintln!("\nNo baseline found at {}", baseline_file.display());
         eprintln!("To create one, copy the current results:");
         eprintln!(
             "  cp {} {}",
@@ -338,7 +337,9 @@ fn json_schema_test_suite_draft2020_12() {
         // Don't fail — allow first run without baseline locally,
         // but fail in CI where the baseline should always be committed.
         if std::env::var("CI").is_ok() {
-            panic!("No baseline found in CI — expected_json_schema_test_suite.json must be committed");
+            panic!(
+                "No baseline found in CI — expected_json_schema_test_suite.json must be committed"
+            );
         }
         return;
     }
