@@ -247,7 +247,7 @@ fn compare_results(
     (regressions, improvements, new_tests, missing_tests)
 }
 
-fn print_category_summary(results: &Results) {
+fn print_category_summary(draft: &str, results: &Results) {
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
     for cat in CATEGORIES {
         counts.insert(cat, 0);
@@ -261,7 +261,7 @@ fn print_category_summary(results: &Results) {
             }
         }
     }
-    eprintln!("\n=== JSON Schema Test Suite (draft2020-12) ===");
+    eprintln!("\n=== JSON Schema Test Suite ({draft}) ===");
     eprintln!("Total: {total}");
     for (cat, count) in &counts {
         if *count > 0 {
@@ -278,6 +278,8 @@ fn main() -> Result<()> {
 
     let mut expected_path: Option<String> = None;
     let mut suite_dir: Option<String> = None;
+    let mut draft = "draft2020-12".to_string();
+    let mut update = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -285,16 +287,34 @@ fn main() -> Result<()> {
                 i += 1;
                 expected_path = Some(args[i].clone());
             }
+            "--draft" => {
+                i += 1;
+                draft = args[i].clone();
+            }
+            "--update" => {
+                update = true;
+            }
             arg if !arg.starts_with('-') => {
                 suite_dir = Some(arg.to_string());
             }
-            other => bail!("Unknown argument: {other}"),
+            other => bail!("Unknown argument: {other}\n\nUsage: json_schema_test_suite [--expected FILE] [--draft DRAFT] [--update] [SUITE_DIR]"),
         }
         i += 1;
     }
 
     let suite_root = ensure_test_suite(suite_dir.as_deref());
-    let suite_dir = suite_root.join("tests").join("draft2020-12");
+    let suite_dir = suite_root.join("tests").join(&draft);
+    if !suite_dir.exists() {
+        let available: Vec<String> = std::fs::read_dir(suite_root.join("tests"))?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        bail!(
+            "Draft '{draft}' not found. Available: {}",
+            available.join(", ")
+        );
+    }
     let mut results: Results = BTreeMap::new();
 
     // Core tests
@@ -322,7 +342,7 @@ fn main() -> Result<()> {
         }
     }
 
-    print_category_summary(&results);
+    print_category_summary(&draft, &results);
 
     // Compare against baseline if provided
     let Some(expected) = expected_path else {
@@ -378,15 +398,23 @@ fn main() -> Result<()> {
                 eprintln!("  {m}");
             }
         }
-        bail!(
-            "Baseline mismatch: {} regressions, {} improvements, {} new, {} missing",
-            regressions.len(),
-            improvements.len(),
-            new_tests.len(),
-            missing_tests.len()
-        );
+        if update {
+            let json = serde_json::to_string_pretty(&results)?;
+            std::fs::write(&baseline_file, &json)?;
+            eprintln!("\nBaseline updated: {expected}");
+        } else {
+            bail!(
+                "Baseline mismatch: {} regressions, {} improvements, {} new, {} missing\n\
+                 Run with --update to update the baseline.",
+                regressions.len(),
+                improvements.len(),
+                new_tests.len(),
+                missing_tests.len()
+            );
+        }
+    } else {
+        eprintln!("\nAll results match baseline. ✓");
     }
 
-    eprintln!("\nAll results match baseline. ✓");
     Ok(())
 }
