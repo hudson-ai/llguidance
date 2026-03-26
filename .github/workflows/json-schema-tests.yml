@@ -26,4 +26,4 @@ jobs:
       run: git clone --depth 1 https://github.com/json-schema-org/JSON-Schema-Test-Suite /tmp/JSON-Schema-Test-Suite
 
     - name: Run JSON Schema Test Suite
-      run: cargo test -p sample_parser --release --test test_json_schema_test_suite -- --nocapture
+      run: cargo test -p sample_parser --release --test test_json_schema_test_suite

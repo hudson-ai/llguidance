@@ -153,7 +153,7 @@ pub fn json_schema_check(schema: &Value, json_obj: &Value, expect_valid: bool) {
     let tokens = get_tok_env().tokenize(&json_string);
 
     // Create the parser
-    let mut p = make_parser(&lark_grammar, false).unwrap();
+    let mut p = make_parser(&lark_grammar, true).unwrap();
 
     // Work through token by token
     for (i, tok) in tokens.iter().enumerate() {
