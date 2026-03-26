@@ -1288,6 +1288,7 @@ name = "json_schema_test_suite"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "llguidance",
  "sample_parser",
  "serde",

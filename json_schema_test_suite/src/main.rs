@@ -15,8 +15,9 @@
 ///
 /// The baseline file is keyed by draft: {"draft2020-12": {...}, "draft7": {...}}.
 /// Without --draft, all drafts in the baseline are checked.
-/// With --draft, only that draft is run.
+/// With --draft, only the specified draft(s) are run.
 use anyhow::{bail, Result};
+use clap::Parser;
 use llguidance::{
     api::{GrammarInit, TopLevelGrammar},
     TokenParser,
@@ -365,45 +366,38 @@ fn check_draft(draft: &str, current: &Results, baseline: &Results, update: bool)
     Ok(has_changes)
 }
 
+/// Run the JSON Schema Test Suite against our compiler with ratchet-based regression detection.
+#[derive(Parser)]
+struct Args {
+    /// Baseline file for ratchet comparison
+    #[arg(long)]
+    expected: Option<String>,
+
+    /// Draft(s) to run (e.g. draft2020-12, draft7). Repeatable.
+    /// Without this flag: runs all drafts in the baseline, or draft2020-12 if no baseline.
+    #[arg(long)]
+    draft: Vec<String>,
+
+    /// Overwrite the baseline file with current results
+    #[arg(long)]
+    update: bool,
+
+    /// Path to JSON-Schema-Test-Suite checkout
+    suite_dir: Option<String>,
+}
+
 fn main() -> Result<()> {
     // Suppress panic messages from catch_unwind (expected for false_negative/false_positive cases)
     std::panic::set_hook(Box::new(|_| {}));
 
-    let args: Vec<String> = std::env::args().collect();
+    let args = Args::parse();
+    let mut drafts_arg = args.draft;
+    let update = args.update;
 
-    let mut expected_path: Option<String> = None;
-    let mut suite_dir: Option<String> = None;
-    let mut drafts_arg: Vec<String> = Vec::new();
-    let mut update = false;
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--expected" => {
-                i += 1;
-                expected_path = Some(args[i].clone());
-            }
-            "--draft" => {
-                i += 1;
-                drafts_arg.push(args[i].clone());
-            }
-            "--update" => {
-                update = true;
-            }
-            arg if !arg.starts_with('-') => {
-                suite_dir = Some(arg.to_string());
-            }
-            other => bail!(
-                "Unknown argument: {other}\n\n\
-                 Usage: json_schema_test_suite [--expected FILE] [--draft DRAFT]... [--update] [SUITE_DIR]"
-            ),
-        }
-        i += 1;
-    }
-
-    let suite_root = ensure_test_suite(suite_dir.as_deref());
+    let suite_root = ensure_test_suite(args.suite_dir.as_deref());
 
     // No baseline — run specified drafts (or default), dump to stdout
-    let Some(expected) = expected_path else {
+    let Some(expected) = args.expected else {
         if drafts_arg.is_empty() {
             drafts_arg.push("draft2020-12".to_string());
         }
