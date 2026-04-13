@@ -562,9 +562,9 @@ dependencies = [
 
 [[package]]
 name = "derivre"
-version = "0.3.9"
+version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cc33bc6d9125f496c6f20a5630a1eb2c4bd435e2d5a735d39dd3232b5c14e6e"
+checksum = "242fdcaa7ed2a72ad6c19191aaaa66a9497653b376ae890c604a2ba70006d0cf"
 dependencies = [
  "ahash",
  "anyhow",
