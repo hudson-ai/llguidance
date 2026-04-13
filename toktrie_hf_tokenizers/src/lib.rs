@@ -134,31 +134,32 @@ impl ByteTokenizer {
             is_byte_fallback: &mut bool,
             is_byte_level: &mut bool,
             space_ch: &mut char,
-        ) {
+        ) -> Result<()> {
             match d {
                 DecoderWrapper::ByteFallback(_) => *is_byte_fallback = true,
                 DecoderWrapper::ByteLevel(_) => *is_byte_level = true,
                 DecoderWrapper::Replace(r) if r.content == " " => {
                     // Replace.pattern is private with no accessor, so serialize to extract it
-                    let v = serde_json::to_value(r).unwrap();
+                    let v = serde_json::to_value(r)?;
                     if let Some(s) = v["pattern"]["String"].as_str() {
-                        let chars: Vec<char> = s.chars().collect();
-                        if chars.len() == 1 {
-                            *space_ch = chars[0];
+                        let mut chars = s.chars();
+                        if let (Some(ch), None) = (chars.next(), chars.next()) {
+                            *space_ch = ch;
                         }
                     }
                 }
                 DecoderWrapper::Sequence(seq) => {
                     for d in seq.get_decoders() {
-                        check_decoder(d, is_byte_fallback, is_byte_level, space_ch);
+                        check_decoder(d, is_byte_fallback, is_byte_level, space_ch)?;
                     }
                 }
                 _ => {}
             }
+            Ok(())
         }
 
         if let Some(d) = hft.get_decoder() {
-            check_decoder(d, &mut is_byte_fallback, &mut is_byte_level, &mut space_ch);
+            check_decoder(d, &mut is_byte_fallback, &mut is_byte_level, &mut space_ch)?;
         }
 
         if !is_byte_fallback && !is_byte_level {
@@ -597,6 +598,18 @@ mod tests {
         ]
     }"#
     )]
+    #[case::byte_fallback_in_nested_sequence(
+        r#"{
+        "type": "Sequence",
+        "decoders": [{
+            "type": "Sequence",
+            "decoders": [
+                { "type": "ByteFallback" },
+                { "type": "Fuse" }
+            ]
+        }]
+    }"#
+    )]
     fn test_decoder_detection(#[case] decoder: &str) {
         let tokenizer_json = format!(
             r#"{{
@@ -629,5 +642,68 @@ mod tests {
 
         let hf_tokenizer = Tokenizer::from_str(&tokenizer_json).unwrap();
         ByteTokenizer::from_tokenizer(hf_tokenizer).expect("decoder type should be detected");
+    }
+
+    #[rstest]
+    #[case::replace_space_top_level(
+        r#"{
+        "type": "Sequence",
+        "decoders": [
+            { "type": "ByteFallback" },
+            { "type": "Replace", "pattern": { "String": "▁" }, "content": " " },
+            { "type": "Fuse" }
+        ]
+    }"#
+    )]
+    #[case::replace_space_in_nested_sequence(
+        r#"{
+        "type": "Sequence",
+        "decoders": [{
+            "type": "Sequence",
+            "decoders": [
+                { "type": "ByteFallback" },
+                { "type": "Replace", "pattern": { "String": "▁" }, "content": " " },
+                { "type": "Fuse" }
+            ]
+        }]
+    }"#
+    )]
+    fn test_decoder_space_char(#[case] decoder: &str) {
+        let tokenizer_json = format!(
+            r#"{{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": {{
+                "type": "ByteLevel",
+                "add_prefix_space": false,
+                "trim_offsets": true
+            }},
+            "post_processor": null,
+            "decoder": {decoder},
+            "model": {{
+                "type": "BPE",
+                "dropout": null,
+                "unk_token": null,
+                "continuing_subword_prefix": "",
+                "end_of_word_suffix": "",
+                "fuse_unk": false,
+                "vocab": {{
+                    "▁hello": 0
+                }},
+                "merges": []
+            }}
+        }}"#
+        );
+
+        let hf_tokenizer = Tokenizer::from_str(&tokenizer_json).unwrap();
+        let bt =
+            ByteTokenizer::from_tokenizer(hf_tokenizer).expect("decoder type should be detected");
+        assert_eq!(
+            bt.token_bytes[0], b" hello",
+            "space_ch replacement should convert ▁ to space"
+        );
     }
 }
