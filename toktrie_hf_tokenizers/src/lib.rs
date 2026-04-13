@@ -562,4 +562,65 @@ mod tests {
         let after_ids = after_encoded.get_ids();
         assert_eq!(after_ids, vec![2, 3], "After fix: expected [a, >]");
     }
+
+    #[rstest]
+    #[case::byte_level_top_level(r#"{
+        "type": "ByteLevel",
+        "add_prefix_space": false,
+        "trim_offsets": true,
+        "use_regex": true
+    }"#)]
+    #[case::byte_level_in_sequence(r#"{
+        "type": "Sequence",
+        "decoders": [{
+            "type": "ByteLevel",
+            "add_prefix_space": false,
+            "trim_offsets": true,
+            "use_regex": true
+        }]
+    }"#)]
+    #[case::byte_fallback_top_level(r#"{
+        "type": "ByteFallback"
+    }"#)]
+    #[case::byte_fallback_in_sequence(r#"{
+        "type": "Sequence",
+        "decoders": [
+            { "type": "ByteFallback" },
+            { "type": "Fuse" }
+        ]
+    }"#)]
+    fn test_decoder_detection(#[case] decoder: &str) {
+        let tokenizer_json = format!(
+            r#"{{
+            "version": "1.0",
+            "truncation": null,
+            "padding": null,
+            "added_tokens": [],
+            "normalizer": null,
+            "pre_tokenizer": {{
+                "type": "ByteLevel",
+                "add_prefix_space": false,
+                "trim_offsets": true
+            }},
+            "post_processor": null,
+            "decoder": {decoder},
+            "model": {{
+                "type": "BPE",
+                "dropout": null,
+                "unk_token": null,
+                "continuing_subword_prefix": "",
+                "end_of_word_suffix": "",
+                "fuse_unk": false,
+                "vocab": {{
+                    "a": 0
+                }},
+                "merges": []
+            }}
+        }}"#
+        );
+
+        let hf_tokenizer = Tokenizer::from_str(&tokenizer_json).unwrap();
+        ByteTokenizer::from_tokenizer(hf_tokenizer)
+            .expect("decoder type should be detected");
+    }
 }
