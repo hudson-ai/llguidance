@@ -9,7 +9,9 @@ use std::{
     path::Path,
     sync::Arc,
 };
-use tokenizers::{normalizers, pre_tokenizers, NormalizerWrapper, PreTokenizerWrapper, Tokenizer};
+use tokenizers::{
+    normalizers, pre_tokenizers, DecoderWrapper, NormalizerWrapper, PreTokenizerWrapper, Tokenizer,
+};
 use toktrie::{TokEnv, TokRxInfo, TokTrie, TokenId, TokenizerEnv};
 
 /// A HuggingFace tokenizer adapted for byte-level token processing.
@@ -127,32 +129,36 @@ impl ByteTokenizer {
             hft.with_pre_tokenizer(Some(fix_metaspace(pt)));
         }
 
-        if let Some(d) = hft.get_decoder() {
-            // DecoderWrapper::Sequence() doesn't let one access the decoders
-            // so we resort to json munching
-            let v = serde_json::to_value(d).unwrap();
-            if v["type"].as_str() == Some("ByteLevel") {
-                is_byte_level = true;
-            } else if v["type"].as_str() == Some("Sequence") {
-                if let Some(decoders) = v["decoders"].as_array() {
-                    for decoder in decoders {
-                        if decoder["type"].as_str() == Some("ByteFallback") {
-                            is_byte_fallback = true;
-                        } else if decoder["type"].as_str() == Some("ByteLevel") {
-                            is_byte_level = true;
-                        } else if decoder["type"].as_str() == Some("Replace")
-                            && decoder["content"].as_str() == Some(" ")
-                        {
-                            if let Some(s) = decoder["pattern"]["String"].as_str() {
-                                let s: Vec<char> = s.chars().collect();
-                                if s.len() == 1 {
-                                    space_ch = s[0];
-                                }
-                            }
+        fn check_decoder(
+            d: &DecoderWrapper,
+            is_byte_fallback: &mut bool,
+            is_byte_level: &mut bool,
+            space_ch: &mut char,
+        ) {
+            match d {
+                DecoderWrapper::ByteFallback(_) => *is_byte_fallback = true,
+                DecoderWrapper::ByteLevel(_) => *is_byte_level = true,
+                DecoderWrapper::Replace(r) if r.content == " " => {
+                    // Replace.pattern is private with no accessor, so serialize to extract it
+                    let v = serde_json::to_value(r).unwrap();
+                    if let Some(s) = v["pattern"]["String"].as_str() {
+                        let chars: Vec<char> = s.chars().collect();
+                        if chars.len() == 1 {
+                            *space_ch = chars[0];
                         }
                     }
                 }
+                DecoderWrapper::Sequence(seq) => {
+                    for d in seq.get_decoders() {
+                        check_decoder(d, is_byte_fallback, is_byte_level, space_ch);
+                    }
+                }
+                _ => {}
             }
+        }
+
+        if let Some(d) = hft.get_decoder() {
+            check_decoder(d, &mut is_byte_fallback, &mut is_byte_level, &mut space_ch);
         }
 
         if !is_byte_fallback && !is_byte_level {
