@@ -564,13 +564,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case::byte_level_top_level(r#"{
+    #[case::byte_level_top_level(
+        r#"{
         "type": "ByteLevel",
         "add_prefix_space": false,
         "trim_offsets": true,
         "use_regex": true
-    }"#)]
-    #[case::byte_level_in_sequence(r#"{
+    }"#
+    )]
+    #[case::byte_level_in_sequence(
+        r#"{
         "type": "Sequence",
         "decoders": [{
             "type": "ByteLevel",
@@ -578,17 +581,22 @@ mod tests {
             "trim_offsets": true,
             "use_regex": true
         }]
-    }"#)]
-    #[case::byte_fallback_top_level(r#"{
+    }"#
+    )]
+    #[case::byte_fallback_top_level(
+        r#"{
         "type": "ByteFallback"
-    }"#)]
-    #[case::byte_fallback_in_sequence(r#"{
+    }"#
+    )]
+    #[case::byte_fallback_in_sequence(
+        r#"{
         "type": "Sequence",
         "decoders": [
             { "type": "ByteFallback" },
             { "type": "Fuse" }
         ]
-    }"#)]
+    }"#
+    )]
     fn test_decoder_detection(#[case] decoder: &str) {
         let tokenizer_json = format!(
             r#"{{
@@ -620,7 +628,6 @@ mod tests {
         );
 
         let hf_tokenizer = Tokenizer::from_str(&tokenizer_json).unwrap();
-        ByteTokenizer::from_tokenizer(hf_tokenizer)
-            .expect("decoder type should be detected");
+        ByteTokenizer::from_tokenizer(hf_tokenizer).expect("decoder type should be detected");
     }
 }
