@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Dates are d
 
 If a release doesn't introduce any interesting changes (build fixes etc.), it's skipped.
 
+#### [v1.7.5](https://github.com/guidance-ai/llguidance/compare/v1.7.4...v1.7.5) 2026-04-29
+
+- Refactor decoder detection to use enum matching with recursive traversal [`#331`](https://github.com/guidance-ai/llguidance/pull/331)
+- perf(toktrie): Optimize Trie initialization to eliminate allocation storms [`#344`](https://github.com/guidance-ai/llguidance/pull/344)
+  - Thanks [@Nathan Memmott](https://github.com/nathanmemmott)
+
+
 #### [v1.7.3](https://github.com/guidance-ai/llguidance/compare/v1.7.0...v1.7.3) 2026-04-20
 
 - Fix big endianess issue [`#335`](https://github.com/guidance-ai/llguidance/pull/335)
