@@ -44,7 +44,7 @@ jobs:
       ref: ${{ github.sha }}
 
   validate:
-    name: Validate
+    name: End of Validation
     runs-on: ubuntu-latest
     needs: [lint, rust-tests, python-tests]
     steps:
@@ -203,7 +203,7 @@ jobs:
           path: dist
 
   build:
-    name: Build
+    name: End of Build
     runs-on: ubuntu-latest
     needs: [sdist, linux, windows, macos]
     steps:
