@@ -1,65 +1,75 @@
-name: Wheels
+name: Release Crate & Wheels
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: read
+  checks: write
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
   PYTHON_VERSION: '3.12'
   MATURIN_VERSION: 'v1.11.5'
 
+# ===========================================================================
+# Phase 1 — Validate
+# ===========================================================================
 jobs:
+  lint:
+    name: Lint
+    uses: ./.github/workflows/lint.yml
+    with:
+      ref: ${{ github.sha }}
+
+  rust-tests:
+    name: Rust Tests (${{ matrix.profile }})
+    uses: ./.github/workflows/rust-tests.yml
+    strategy:
+      matrix:
+        profile: [debug, release]
+    with:
+      profile: ${{ matrix.profile }}
+      ref: ${{ github.sha }}
+
+  python-tests:
+    name: Python Tests
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      python-version: '3.12'
+      ref: ${{ github.sha }}
+
+# ===========================================================================
+# Phase 2 — Build (depends on all validation passing)
+# ===========================================================================
   sdist:
+    name: Build sdist
     runs-on: ubuntu-latest
+    needs: [lint, rust-tests, python-tests]
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install python test dependencies
-        run: ./scripts/install-deps.sh
-    
-      - name: Run python guidance tests
-        run: ./scripts/test-guidance.sh
-    
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
+          maturin-version: ${{ env.MATURIN_VERSION }}
           command: sdist
           args: --out dist
 
       - name: Upload sdist
         uses: actions/upload-artifact@v6
         with:
-          name: wheels-sdist
+          name: release-sdist
           path: dist
 
-  crates:
-    name: Upload to crates.io
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    environment: pkg
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Run Rust tests
-        run: ./scripts/test-guidance.sh --rust
-
-      - name: Publish to crates.io
-        run: ./scripts/ci-publish.py
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
   linux:
+    name: Build Linux (${{ matrix.platform.arch }}, py${{ matrix.python.version }})
     runs-on: ${{ matrix.platform.runner }}
-    needs: [sdist]
+    needs: [lint, rust-tests, python-tests]
     strategy:
       matrix:
         platform:
@@ -84,7 +94,10 @@ jobs:
             zig: false
             manylinux: 2_39
             container: 'off'
-            before-script: 'sudo apt-get install -y gcc-riscv64-linux-gnu && mkdir -p ~/.cargo && printf "[target.riscv64gc-unknown-linux-gnu]\nlinker = \"riscv64-linux-gnu-gcc\"\n" >> ~/.cargo/config.toml'
+            before-script: >-
+              sudo apt-get install -y gcc-riscv64-linux-gnu &&
+              mkdir -p ~/.cargo &&
+              printf "[target.riscv64gc-unknown-linux-gnu]\nlinker = \"riscv64-linux-gnu-gcc\"\n" >> ~/.cargo/config.toml
         python:
           - version: '3.12'
             zig: true
@@ -97,6 +110,7 @@ jobs:
               version: '3.14t'
     steps:
       - uses: actions/checkout@v6
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -107,15 +121,17 @@ jobs:
           manylinux: ${{ matrix.platform.manylinux }}
           container: ${{ matrix.platform.container || '' }}
           before-script-linux: ${{ matrix.platform.before-script || '' }}
+
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
-          name: wheels-linux-${{ matrix.platform.arch }}-${{ matrix.python.version }}
+          name: release-linux-${{ matrix.platform.arch }}-${{ matrix.python.version }}
           path: dist
 
   windows:
+    name: Build Windows (${{ matrix.platform.target }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.platform.runner }}
-    needs: [sdist]
+    needs: [lint, rust-tests, python-tests]
     strategy:
       matrix:
         platform:
@@ -126,10 +142,12 @@ jobs:
         python-version: ['3.12', '3.14t']
     steps:
       - uses: actions/checkout@v6
+
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           architecture: ${{ matrix.platform.target }}
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -137,15 +155,17 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --compatibility pypi
           sccache: 'true'
+
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
-          name: wheels-windows-${{ matrix.platform.target }}-${{ matrix.python-version }}
+          name: release-windows-${{ matrix.platform.target }}-${{ matrix.python-version }}
           path: dist
 
   macos:
+    name: Build macOS (${{ matrix.platform.target }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.platform.runner }}
-    needs: [sdist]
+    needs: [lint, rust-tests, python-tests]
     strategy:
       matrix:
         platform:
@@ -156,9 +176,11 @@ jobs:
         python-version: ['3.12', '3.14t']
     steps:
       - uses: actions/checkout@v6
+
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -166,25 +188,50 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --compatibility pypi
           sccache: 'true'
+
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
-          name: wheels-macos-${{ matrix.platform.target }}-${{ matrix.python-version }}
+          name: release-macos-${{ matrix.platform.target }}-${{ matrix.python-version }}
           path: dist
 
-  release:
-    name: Release
+# ===========================================================================
+# Phase 3 — Publish (depends on ALL previous jobs)
+# ===========================================================================
+  publish-crates:
+    name: Publish to crates.io
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.ref_type == 'tag'
+    needs: [lint, rust-tests, python-tests, sdist, linux, windows, macos]
+    environment: pkg
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Publish to crates.io
+        run: ./scripts/ci-publish.py
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    needs: [lint, rust-tests, python-tests, sdist, linux, windows, macos]
     environment: pkg
     permissions:
-        id-token: write
-    needs: [linux, windows, macos, sdist]
+      id-token: write
     steps:
-      - uses: actions/download-artifact@v7
+      - name: Download release artifacts
+        uses: actions/download-artifact@v7
         with:
           path: dist
+          pattern: release-*
           merge-multiple: true
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
