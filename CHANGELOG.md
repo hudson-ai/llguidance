@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Dates are d
 
 If a release doesn't introduce any interesting changes (build fixes etc.), it's skipped.
 
+#### [v1.7.6](https://github.com/guidance-ai/llguidance/compare/v1.7.5...v1.7.6) 2026-06-03
+
+- Bump derivre to 0.3.12 [`#351`](https://github.com/guidance-ai/llguidance/pull/351)
+  - Thanks [@drubery](https://github.com/drubery)!
+- Fix validate_tokens for multiple EOS tokens [`#347`](https://github.com/guidance-ai/llguidance/pull/347)
+  - Thanks [@fellhorn](https://github.com/fellhorn)!
+
 #### [v1.7.5](https://github.com/guidance-ai/llguidance/compare/v1.7.4...v1.7.5) 2026-04-29
 
 - Refactor decoder detection to use enum matching with recursive traversal [`#331`](https://github.com/guidance-ai/llguidance/pull/331)
