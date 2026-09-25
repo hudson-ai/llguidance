@@ -348,6 +348,7 @@ impl TokenParser {
     }
 
     fn check_initialized(&self, lbl: &str) -> Result<()> {
+        self.parser.check_cancelled()?;
         ensure!(!self.is_fresh, "process_prompt() not called in {}", lbl);
         ensure!(
             !self.stopped(),
@@ -494,6 +495,7 @@ impl TokenParser {
             trg
         };
 
+        self.parser.check_cancelled()?;
         let mut allowed_tokens = self.compute_bias(&prefix);
 
         if let Some(s) = self.parser.get_error() {
@@ -519,6 +521,10 @@ impl TokenParser {
     }
 
     fn stop_for_parser_error(&mut self, pref: &str, err: ParserError) -> anyhow::Error {
+        if matches!(err, ParserError::Cancelled) {
+            self.stop_reason = StopReason::Cancelled;
+            return crate::Cancelled.into();
+        }
         self.stop(&format!("{}{}", pref, err.message()), err.stop_reason())
     }
 
@@ -582,6 +588,7 @@ impl TokenParser {
         // now apply normally
         match self.parser.apply_token(tok_bytes, tok_id) {
             Err(e) => {
+                self.parser.check_cancelled()?;
                 return Err(self.stop(
                     &format!("Parser Error: {e}"),
                     StopReason::ParserTooComplex, // TODO - there are other reasons
@@ -699,6 +706,9 @@ impl TokenParser {
         let num_existing_bytes = forced_bytes.len();
 
         self.compute_ff_bytes_to(&mut forced_bytes);
+        if self.parser.check_cancelled().is_err() {
+            return (Vec::new(), Vec::new());
+        }
 
         let mut token_prefix = Vec::new();
 
@@ -707,6 +717,9 @@ impl TokenParser {
         if do_force {
             let t0 = Instant::now();
             let (mut tokens, mut num_fixed) = self.token_env.tokenize_bytes_marker(&forced_bytes);
+            if self.parser.check_cancelled().is_err() {
+                return (Vec::new(), Vec::new());
+            }
             if !tokens.starts_with(&existing_tokens) {
                 // whoops, re-tokenize without the prefix
                 let trie = self.token_env.tok_trie();
@@ -849,6 +862,7 @@ impl TokenParser {
     /// Otherwise, returns false.
     /// This generally should be called after consume_token().
     pub fn check_stop(&mut self) -> Result<bool> {
+        self.parser.check_cancelled()?;
         let empty_token_prefix = !self.has_ff_bytes();
         let pending_eos = self
             .llm_tokens
@@ -856,6 +870,7 @@ impl TokenParser {
             .is_some_and(|t| self.eos_tokens.contains(t));
         let lexer_bytes = self.parser.has_pending_lexeme_bytes();
         let is_accepting = self.is_accepting();
+        self.parser.check_cancelled()?;
         let can_advance = self.parser.can_advance();
         let parser_done = is_accepting && (!can_advance || pending_eos);
         infoln!(
