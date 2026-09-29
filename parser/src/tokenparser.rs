@@ -3,7 +3,7 @@ use std::{fmt::Display, hint::black_box, panic::AssertUnwindSafe, sync::Arc, tim
 use crate::{
     api::{GrammarInit, ParserLimits, StopReason},
     earley::{BiasComputer, Parser, ParserError, ParserStats},
-    infoln, panic_utils, warn, Instant, Logger, ParserFactory,
+    infoln, panic_utils, warn, CancellationHandle, Instant, Logger, ParserFactory,
 };
 use anyhow::{ensure, Result};
 use toktrie::{InferenceCapabilities, SimpleVob, TokEnv, TokenId, INVALID_TOKEN};
@@ -136,11 +136,24 @@ impl TokenParser {
         self.parser.captures()
     }
 
-    // regular .clone() uses a shared lexer state
+    /// Clone the parser and its lexer caches for independent execution.
+    ///
+    /// The clone starts without cancellation enabled. Regular [`Clone::clone`] uses shared lexer
+    /// state and shares any enabled cancellation handle.
     pub fn deep_clone(&self) -> Self {
         let mut copy = self.clone();
         copy.parser = self.parser.deep_clone();
+        copy.parser.clear_cancellation_handle();
         copy
+    }
+
+    /// Enable cooperative cancellation and return a handle for requesting it.
+    ///
+    /// This is idempotent: repeated calls return handles for the same permanent cancellation
+    /// state. The handle may outlive the parser. Call this while the parser is idle; cancellation
+    /// may then be requested while a parser operation is running.
+    pub fn enable_cancellation(&mut self) -> CancellationHandle {
+        self.parser.enable_cancellation()
     }
 
     pub fn stop_reason(&self) -> StopReason {

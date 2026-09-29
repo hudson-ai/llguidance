@@ -112,6 +112,16 @@ mod tests {
         matcher
     }
 
+    fn token_parser(grammar: &str) -> crate::TokenParser {
+        let env = ApproximateTokEnv::single_byte_env();
+        let factory = ParserFactory::new(&env, InferenceCapabilities::default(), &[]).unwrap();
+        let mut parser = factory
+            .create_parser(TopLevelGrammar::from_lark(grammar.to_string()))
+            .unwrap();
+        parser.start_without_prompt();
+        parser
+    }
+
     #[test]
     fn forced_results_keep_failure_in_matcher_state() {
         let mut tested = matcher(r#"start: "abcdef""#, &[], true);
@@ -167,6 +177,24 @@ mod tests {
         assert!(matcher.cancellation_handle().is_some());
         matcher.cancellation_handle().unwrap().cancel();
         assert!(matcher.is_cancelled());
+    }
+
+    #[test]
+    fn token_parser_cancellation_is_idempotent_and_deep_clone_is_independent() {
+        let mut parser = token_parser("start: /[a-z]+/");
+
+        let first = parser.enable_cancellation();
+        let second = parser.enable_cancellation();
+        let mut shallow = parser.clone();
+        let mut deep = parser.deep_clone();
+        let deep_handle = deep.enable_cancellation();
+
+        first.cancel();
+        assert!(second.is_cancelled());
+        assert!(!deep_handle.is_cancelled());
+        assert_cancelled(parser.compute_mask());
+        assert_cancelled(shallow.compute_mask());
+        assert!(deep.compute_mask().is_ok());
     }
 
     #[test]

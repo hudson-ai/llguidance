@@ -55,13 +55,10 @@ impl Matcher {
         if self.1.is_some() {
             return;
         }
-        let cancellation = CancellationHandle::default();
-        if let MatcherState::Normal(inner) = &mut self.0 {
-            inner
-                .parser
-                .parser
-                .set_cancellation_handle(cancellation.clone());
-        }
+        let cancellation = match &mut self.0 {
+            MatcherState::Normal(inner) => inner.parser.enable_cancellation(),
+            _ => CancellationHandle::default(),
+        };
         self.1 = Some(cancellation);
     }
 

@@ -2908,6 +2908,19 @@ impl Parser {
         self.state.cancellation = Some(handle);
     }
 
+    pub(crate) fn enable_cancellation(&mut self) -> CancellationHandle {
+        if let Some(handle) = self.state.cancellation.as_ref() {
+            return handle.clone();
+        }
+        let handle = CancellationHandle::default();
+        self.state.cancellation = Some(handle.clone());
+        handle
+    }
+
+    pub(crate) fn clear_cancellation_handle(&mut self) {
+        self.state.cancellation = None;
+    }
+
     pub(crate) fn check_cancelled(&self) -> Result<()> {
         self.state.check_cancelled()
     }
