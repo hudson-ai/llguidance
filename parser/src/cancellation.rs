@@ -3,10 +3,11 @@ use std::sync::{
     Arc,
 };
 
-/// A permanent cancellation request for one matcher.
+/// A permanent cancellation request for one parser or matcher.
 ///
-/// Cloned handles control the same matcher. The handle can outlive its matcher.
-/// Cancellation does not wait for the worker. Join the worker before accessing the matcher.
+/// Cloned handles control the same cancellation state. The handle can outlive the parser or
+/// matcher. Cancellation does not wait for the worker; join it before accessing the cancelled
+/// object.
 #[derive(Clone, Debug, Default)]
 pub struct CancellationHandle(Arc<AtomicBool>);
 
@@ -29,7 +30,7 @@ impl CancellationHandle {
     }
 }
 
-/// The matcher observed a permanent cancellation request.
+/// A parser or matcher observed a permanent cancellation request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cancelled;
 
