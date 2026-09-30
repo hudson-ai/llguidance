@@ -13,6 +13,9 @@ use toktrie::{InferenceCapabilities, SimpleVob, TokEnv, TokenId, INVALID_TOKEN};
 /// Created by [`ParserFactory::create_parser()`] and typically wrapped in a
 /// [`crate::Constraint`] for the sampling loop.  Maintains the grammar state,
 /// computes token masks, and processes sampled tokens.
+///
+/// Cloning copies parser state but does not copy an enabled cancellation handle. Clone the handle
+/// explicitly when multiple owners should control the same cancellation state.
 #[derive(Clone)]
 pub struct TokenParser {
     pub token_env: TokEnv,
@@ -150,7 +153,8 @@ impl TokenParser {
     ///
     /// This is idempotent: repeated calls return handles for the same permanent cancellation
     /// state. The handle may outlive the parser. Call this while the parser is idle; cancellation
-    /// may then be requested while a parser operation is running.
+    /// may then be requested while a parser operation is running. Once requested, cancellation is
+    /// permanent for this parser.
     pub fn enable_cancellation(&mut self) -> CancellationHandle {
         self.parser.enable_cancellation()
     }
