@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Dates are d
 
 If a release doesn't introduce any interesting changes (build fixes etc.), it's skipped.
 
+#### [v1.9.1](https://github.com/guidance-ai/llguidance/compare/v1.9.0...v1.9.1) 2026-09-30
+
+- Expose cooperative cancellation on TokenParser [`#387`](https://github.com/guidance-ai/llguidance/pull/387)
+
 #### [v1.9.0](https://github.com/guidance-ai/llguidance/compare/v1.8.0...v1.9.0) 2026-09-29
 
 - Add opt-in cancellation for abandoned matcher computations [`#382`](https://github.com/guidance-ai/llguidance/pull/382); fixes [`#261`](https://github.com/guidance-ai/llguidance/issues/261)
