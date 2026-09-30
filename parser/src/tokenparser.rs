@@ -14,8 +14,8 @@ use toktrie::{InferenceCapabilities, SimpleVob, TokEnv, TokenId, INVALID_TOKEN};
 /// [`crate::Constraint`] for the sampling loop.  Maintains the grammar state,
 /// computes token masks, and processes sampled tokens.
 ///
-/// Cloning copies parser state but does not copy an enabled cancellation handle. Clone the handle
-/// explicitly when multiple owners should control the same cancellation state.
+/// Cloning snapshots current cancellation into independent cancellation state. Clone the handle
+/// explicitly when multiple owners should share future cancellation requests.
 #[derive(Clone)]
 pub struct TokenParser {
     pub token_env: TokEnv,
@@ -141,8 +141,9 @@ impl TokenParser {
 
     /// Clone the parser and its lexer caches for independent execution.
     ///
-    /// Clones do not inherit the cancellation handle. Parser state already changed by an observed
-    /// cancellation is still cloned. Regular [`Clone::clone`] uses shared lexer state.
+    /// The clone snapshots current cancellation into independent cancellation state. Parser state
+    /// already changed by an observed cancellation is still cloned. Regular [`Clone::clone`] uses
+    /// shared lexer state.
     pub fn deep_clone(&self) -> Self {
         let mut copy = self.clone();
         copy.parser = self.parser.deep_clone();
@@ -157,6 +158,11 @@ impl TokenParser {
     /// permanent for this parser.
     pub fn enable_cancellation(&mut self) -> CancellationHandle {
         self.parser.enable_cancellation()
+    }
+
+    /// Return the current cancellation handle, if cancellation has been enabled.
+    pub fn cancellation_handle(&self) -> Option<CancellationHandle> {
+        self.parser.cancellation_handle()
     }
 
     pub fn stop_reason(&self) -> StopReason {

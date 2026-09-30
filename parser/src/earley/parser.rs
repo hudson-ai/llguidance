@@ -432,7 +432,10 @@ pub struct Parser {
 impl Clone for Parser {
     fn clone(&self) -> Self {
         let mut state = self.state.clone();
-        state.cancellation = None;
+        state.cancellation = state
+            .cancellation
+            .as_ref()
+            .map(CancellationHandle::snapshot);
         Self {
             shared: self.shared.clone(),
             state,
@@ -2925,6 +2928,10 @@ impl Parser {
         let handle = CancellationHandle::default();
         self.state.cancellation = Some(handle.clone());
         handle
+    }
+
+    pub(crate) fn cancellation_handle(&self) -> Option<CancellationHandle> {
+        self.state.cancellation.clone()
     }
 
     pub(crate) fn check_cancelled(&self) -> Result<()> {
