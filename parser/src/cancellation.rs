@@ -202,6 +202,36 @@ mod tests {
     }
 
     #[test]
+    fn token_parser_does_not_publish_mask_after_in_flight_cancellation() {
+        let mut parser = token_parser("start: /[a-z]+/");
+        let handle = parser.enable_cancellation();
+        let (reached_tx, reached_rx) = mpsc::sync_channel(0);
+        let (resume_tx, resume_rx) = mpsc::sync_channel(0);
+        let worker = thread::spawn(move || {
+            PROGRESS.with_borrow_mut(|progress| {
+                *progress = Some(Progress {
+                    point: "trie",
+                    work: 0,
+                    threshold: 1,
+                    reached: reached_tx,
+                    resume: resume_rx,
+                });
+            });
+            let result = parser.compute_mask();
+            (result, parser)
+        });
+
+        let reached = reached_rx.recv_timeout(Duration::from_secs(10));
+        handle.cancel();
+        let _ = resume_tx.send(());
+        let (result, parser) = worker.join().unwrap();
+        reached.unwrap();
+
+        assert_cancelled(result);
+        assert_eq!(parser.stop_reason(), StopReason::Cancelled);
+    }
+
+    #[test]
     fn terminal_cancellation_and_clone_ownership() {
         let mut original = matcher("start: /[a-z]+/", &[], false);
         let mut shallow = original.clone();

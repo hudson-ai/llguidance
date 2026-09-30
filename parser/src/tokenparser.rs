@@ -488,6 +488,10 @@ impl TokenParser {
             .perf_counters()
             .compute_mask
             .record(self.compute_mask_start_time.elapsed());
+        if let Err(error) = self.parser.check_cancelled() {
+            self.stop_reason = StopReason::Cancelled;
+            return Err(error);
+        }
         r
     }
 
