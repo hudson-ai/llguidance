@@ -424,10 +424,20 @@ impl SharedState {
     }
 }
 
-#[derive(Clone)]
 pub struct Parser {
     shared: Arc<Mutex<Box<SharedState>>>,
     state: ParserState,
+}
+
+impl Clone for Parser {
+    fn clone(&self) -> Self {
+        let mut state = self.state.clone();
+        state.cancellation = None;
+        Self {
+            shared: self.shared.clone(),
+            state,
+        }
+    }
 }
 
 impl Scratch {
@@ -2915,10 +2925,6 @@ impl Parser {
         let handle = CancellationHandle::default();
         self.state.cancellation = Some(handle.clone());
         handle
-    }
-
-    pub(crate) fn clear_cancellation_handle(&mut self) {
-        self.state.cancellation = None;
     }
 
     pub(crate) fn check_cancelled(&self) -> Result<()> {

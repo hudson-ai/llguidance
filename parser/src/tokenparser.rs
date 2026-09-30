@@ -138,12 +138,11 @@ impl TokenParser {
 
     /// Clone the parser and its lexer caches for independent execution.
     ///
-    /// The clone starts without cancellation enabled. Regular [`Clone::clone`] uses shared lexer
-    /// state and shares any enabled cancellation handle.
+    /// Clones do not inherit the cancellation handle. Parser state already changed by an observed
+    /// cancellation is still cloned. Regular [`Clone::clone`] uses shared lexer state.
     pub fn deep_clone(&self) -> Self {
         let mut copy = self.clone();
         copy.parser = self.parser.deep_clone();
-        copy.parser.clear_cancellation_handle();
         copy
     }
 

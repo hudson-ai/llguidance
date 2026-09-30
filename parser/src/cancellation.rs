@@ -181,20 +181,22 @@ mod tests {
     }
 
     #[test]
-    fn token_parser_cancellation_is_idempotent_and_deep_clone_is_independent() {
+    fn token_parser_cancellation_is_idempotent_and_clones_are_independent() {
         let mut parser = token_parser("start: /[a-z]+/");
 
         let first = parser.enable_cancellation();
         let second = parser.enable_cancellation();
         let mut shallow = parser.clone();
-        let mut deep = parser.deep_clone();
-        let deep_handle = deep.enable_cancellation();
 
         first.cancel();
+        let mut deep = parser.deep_clone();
+        let shallow_handle = shallow.enable_cancellation();
+        let deep_handle = deep.enable_cancellation();
         assert!(second.is_cancelled());
+        assert!(!shallow_handle.is_cancelled());
         assert!(!deep_handle.is_cancelled());
         assert_cancelled(parser.compute_mask());
-        assert_cancelled(shallow.compute_mask());
+        assert!(shallow.compute_mask().is_ok());
         assert!(deep.compute_mask().is_ok());
     }
 
