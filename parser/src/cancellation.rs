@@ -3,10 +3,11 @@ use std::sync::{
     Arc,
 };
 
-/// A permanent cancellation request for one matcher.
+/// A permanent cancellation request for one parser or matcher.
 ///
-/// Cloned handles control the same matcher. The handle can outlive its matcher.
-/// Cancellation does not wait for the worker. Join the worker before accessing the matcher.
+/// Cloned handles control the same cancellation state. The handle can outlive the parser or
+/// matcher. Cancellation does not wait for the worker; join it before accessing the cancelled
+/// object.
 #[derive(Clone, Debug, Default)]
 pub struct CancellationHandle(Arc<AtomicBool>);
 
@@ -29,7 +30,7 @@ impl CancellationHandle {
     }
 }
 
-/// The matcher observed a permanent cancellation request.
+/// A parser or matcher observed a permanent cancellation request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cancelled;
 
@@ -112,6 +113,45 @@ mod tests {
         matcher
     }
 
+    fn token_parser(grammar: &str) -> crate::TokenParser {
+        let env = ApproximateTokEnv::single_byte_env();
+        let factory = ParserFactory::new(&env, InferenceCapabilities::default(), &[]).unwrap();
+        let mut parser = factory
+            .create_parser(TopLevelGrammar::from_lark(grammar.to_string()))
+            .unwrap();
+        parser.start_without_prompt();
+        parser
+    }
+
+    fn interrupt_token_parser<T: Send + 'static>(
+        mut parser: crate::TokenParser,
+        operation: fn(&mut crate::TokenParser) -> anyhow::Result<T>,
+    ) -> (anyhow::Result<T>, crate::TokenParser) {
+        let handle = parser.cancellation_handle().unwrap();
+        let (reached_tx, reached_rx) = mpsc::sync_channel(0);
+        let (resume_tx, resume_rx) = mpsc::sync_channel(0);
+        let worker = thread::spawn(move || {
+            PROGRESS.with_borrow_mut(|progress| {
+                *progress = Some(Progress {
+                    point: "trie",
+                    work: 0,
+                    threshold: 1,
+                    reached: reached_tx,
+                    resume: resume_rx,
+                });
+            });
+            let result = operation(&mut parser);
+            (result, parser)
+        });
+
+        let reached = reached_rx.recv_timeout(Duration::from_secs(10));
+        handle.cancel();
+        let _ = resume_tx.send(());
+        let result = worker.join().unwrap();
+        reached.unwrap();
+        result
+    }
+
     #[test]
     fn forced_results_keep_failure_in_matcher_state() {
         let mut tested = matcher(r#"start: "abcdef""#, &[], true);
@@ -167,6 +207,63 @@ mod tests {
         assert!(matcher.cancellation_handle().is_some());
         matcher.cancellation_handle().unwrap().cancel();
         assert!(matcher.is_cancelled());
+    }
+
+    #[test]
+    fn token_parser_clones_snapshot_cancellation_independently() {
+        let mut parser = token_parser("start: /[a-z]+/");
+        assert!(parser.cancellation_handle().is_none());
+
+        let first = parser.enable_cancellation();
+        let second = parser.enable_cancellation();
+        let mut shallow = parser.clone();
+
+        first.cancel();
+        let mut deep = parser.deep_clone();
+        let shallow_handle = shallow.cancellation_handle().unwrap();
+        let deep_handle = deep.cancellation_handle().unwrap();
+        assert!(second.is_cancelled());
+        assert!(!shallow_handle.is_cancelled());
+        assert!(deep_handle.is_cancelled());
+        assert_cancelled(parser.compute_mask());
+        assert!(shallow.compute_mask().is_ok());
+        assert_cancelled(deep.compute_mask());
+    }
+
+    #[test]
+    fn token_parser_does_not_publish_mask_after_in_flight_cancellation() {
+        let mut parser = token_parser("start: /[a-z]+/");
+        parser.enable_cancellation();
+        let (result, parser) = interrupt_token_parser(parser, crate::TokenParser::compute_mask);
+
+        assert_cancelled(result);
+        assert_eq!(parser.stop_reason(), StopReason::Cancelled);
+    }
+
+    #[test]
+    fn token_parser_does_not_publish_partial_validation_after_cancellation() {
+        let mut parser = token_parser("start: /[a-z]+/");
+        parser.enable_cancellation();
+        let (result, parser) = interrupt_token_parser(parser, |parser| {
+            parser.validate_tokens_raw(&[b'a' as u32; 32])
+        });
+
+        assert_cancelled(result);
+        assert_eq!(parser.stop_reason(), StopReason::Cancelled);
+    }
+
+    #[test]
+    fn matcher_adopts_token_parser_cancellation() {
+        let mut parser = token_parser("start: /[a-z]+/");
+        let handle = parser.enable_cancellation();
+        let mut matcher = Matcher::new(Ok(parser));
+        let mut independent = matcher.clone();
+
+        assert!(matcher.cancellation_handle().is_some());
+        handle.cancel();
+        assert!(matcher.is_cancelled());
+        assert_cancelled(matcher.compute_mask());
+        assert!(independent.compute_mask().is_ok());
     }
 
     #[test]

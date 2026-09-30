@@ -424,10 +424,23 @@ impl SharedState {
     }
 }
 
-#[derive(Clone)]
 pub struct Parser {
     shared: Arc<Mutex<Box<SharedState>>>,
     state: ParserState,
+}
+
+impl Clone for Parser {
+    fn clone(&self) -> Self {
+        let mut state = self.state.clone();
+        state.cancellation = state
+            .cancellation
+            .as_ref()
+            .map(CancellationHandle::snapshot);
+        Self {
+            shared: self.shared.clone(),
+            state,
+        }
+    }
 }
 
 impl Scratch {
@@ -2906,6 +2919,19 @@ impl ParserError {
 impl Parser {
     pub(crate) fn set_cancellation_handle(&mut self, handle: CancellationHandle) {
         self.state.cancellation = Some(handle);
+    }
+
+    pub(crate) fn enable_cancellation(&mut self) -> CancellationHandle {
+        if let Some(handle) = self.state.cancellation.as_ref() {
+            return handle.clone();
+        }
+        let handle = CancellationHandle::default();
+        self.state.cancellation = Some(handle.clone());
+        handle
+    }
+
+    pub(crate) fn cancellation_handle(&self) -> Option<CancellationHandle> {
+        self.state.cancellation.clone()
     }
 
     pub(crate) fn check_cancelled(&self) -> Result<()> {

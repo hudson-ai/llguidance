@@ -3,7 +3,7 @@ use std::{fmt::Display, hint::black_box, panic::AssertUnwindSafe, sync::Arc, tim
 use crate::{
     api::{GrammarInit, ParserLimits, StopReason},
     earley::{BiasComputer, Parser, ParserError, ParserStats},
-    infoln, panic_utils, warn, Instant, Logger, ParserFactory,
+    infoln, panic_utils, warn, CancellationHandle, Instant, Logger, ParserFactory,
 };
 use anyhow::{ensure, Result};
 use toktrie::{InferenceCapabilities, SimpleVob, TokEnv, TokenId, INVALID_TOKEN};
@@ -13,6 +13,9 @@ use toktrie::{InferenceCapabilities, SimpleVob, TokEnv, TokenId, INVALID_TOKEN};
 /// Created by [`ParserFactory::create_parser()`] and typically wrapped in a
 /// [`crate::Constraint`] for the sampling loop.  Maintains the grammar state,
 /// computes token masks, and processes sampled tokens.
+///
+/// Cloning snapshots current cancellation into independent cancellation state. Clone the handle
+/// explicitly when multiple owners should share future cancellation requests.
 #[derive(Clone)]
 pub struct TokenParser {
     pub token_env: TokEnv,
@@ -136,11 +139,30 @@ impl TokenParser {
         self.parser.captures()
     }
 
-    // regular .clone() uses a shared lexer state
+    /// Clone the parser and its lexer caches for independent execution.
+    ///
+    /// The clone snapshots current cancellation into independent cancellation state. Parser state
+    /// already changed by an observed cancellation is still cloned. Regular [`Clone::clone`] uses
+    /// shared lexer state.
     pub fn deep_clone(&self) -> Self {
         let mut copy = self.clone();
         copy.parser = self.parser.deep_clone();
         copy
+    }
+
+    /// Enable cooperative cancellation and return a handle for requesting it.
+    ///
+    /// This is idempotent: repeated calls return handles for the same permanent cancellation
+    /// state. The handle may outlive the parser. Call this while the parser is idle; cancellation
+    /// may then be requested while a parser operation is running. Once requested, cancellation is
+    /// permanent for this parser.
+    pub fn enable_cancellation(&mut self) -> CancellationHandle {
+        self.parser.enable_cancellation()
+    }
+
+    /// Return the current cancellation handle, if cancellation has been enabled.
+    pub fn cancellation_handle(&self) -> Option<CancellationHandle> {
+        self.parser.cancellation_handle()
     }
 
     pub fn stop_reason(&self) -> StopReason {
@@ -347,8 +369,16 @@ impl TokenParser {
         self.error_message.clone()
     }
 
-    fn check_initialized(&self, lbl: &str) -> Result<()> {
-        self.parser.check_cancelled()?;
+    fn check_cancellation(&mut self) -> Result<()> {
+        if let Err(error) = self.parser.check_cancelled() {
+            self.stop_reason = StopReason::Cancelled;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn check_initialized(&mut self, lbl: &str) -> Result<()> {
+        self.check_cancellation()?;
         ensure!(!self.is_fresh, "process_prompt() not called in {}", lbl);
         ensure!(
             !self.stopped(),
@@ -447,6 +477,7 @@ impl TokenParser {
         }
 
         let n_valid = self.parser.validate_tokens(tokens);
+        self.check_cancellation()?;
         Ok(n_valid)
     }
 
@@ -466,6 +497,7 @@ impl TokenParser {
             .perf_counters()
             .compute_mask
             .record(self.compute_mask_start_time.elapsed());
+        self.check_cancellation()?;
         r
     }
 
@@ -588,7 +620,7 @@ impl TokenParser {
         // now apply normally
         match self.parser.apply_token(tok_bytes, tok_id) {
             Err(e) => {
-                self.parser.check_cancelled()?;
+                self.check_cancellation()?;
                 return Err(self.stop(
                     &format!("Parser Error: {e}"),
                     StopReason::ParserTooComplex, // TODO - there are other reasons
@@ -862,7 +894,7 @@ impl TokenParser {
     /// Otherwise, returns false.
     /// This generally should be called after consume_token().
     pub fn check_stop(&mut self) -> Result<bool> {
-        self.parser.check_cancelled()?;
+        self.check_cancellation()?;
         let empty_token_prefix = !self.has_ff_bytes();
         let pending_eos = self
             .llm_tokens
@@ -870,7 +902,7 @@ impl TokenParser {
             .is_some_and(|t| self.eos_tokens.contains(t));
         let lexer_bytes = self.parser.has_pending_lexeme_bytes();
         let is_accepting = self.is_accepting();
-        self.parser.check_cancelled()?;
+        self.check_cancellation()?;
         let can_advance = self.parser.can_advance();
         let parser_done = is_accepting && (!can_advance || pending_eos);
         infoln!(
