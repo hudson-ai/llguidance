@@ -369,8 +369,16 @@ impl TokenParser {
         self.error_message.clone()
     }
 
-    fn check_initialized(&self, lbl: &str) -> Result<()> {
-        self.parser.check_cancelled()?;
+    fn check_cancellation(&mut self) -> Result<()> {
+        if let Err(error) = self.parser.check_cancelled() {
+            self.stop_reason = StopReason::Cancelled;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn check_initialized(&mut self, lbl: &str) -> Result<()> {
+        self.check_cancellation()?;
         ensure!(!self.is_fresh, "process_prompt() not called in {}", lbl);
         ensure!(
             !self.stopped(),
@@ -469,6 +477,7 @@ impl TokenParser {
         }
 
         let n_valid = self.parser.validate_tokens(tokens);
+        self.check_cancellation()?;
         Ok(n_valid)
     }
 
@@ -488,10 +497,7 @@ impl TokenParser {
             .perf_counters()
             .compute_mask
             .record(self.compute_mask_start_time.elapsed());
-        if let Err(error) = self.parser.check_cancelled() {
-            self.stop_reason = StopReason::Cancelled;
-            return Err(error);
-        }
+        self.check_cancellation()?;
         r
     }
 
@@ -614,7 +620,7 @@ impl TokenParser {
         // now apply normally
         match self.parser.apply_token(tok_bytes, tok_id) {
             Err(e) => {
-                self.parser.check_cancelled()?;
+                self.check_cancellation()?;
                 return Err(self.stop(
                     &format!("Parser Error: {e}"),
                     StopReason::ParserTooComplex, // TODO - there are other reasons
@@ -888,7 +894,7 @@ impl TokenParser {
     /// Otherwise, returns false.
     /// This generally should be called after consume_token().
     pub fn check_stop(&mut self) -> Result<bool> {
-        self.parser.check_cancelled()?;
+        self.check_cancellation()?;
         let empty_token_prefix = !self.has_ff_bytes();
         let pending_eos = self
             .llm_tokens
@@ -896,7 +902,7 @@ impl TokenParser {
             .is_some_and(|t| self.eos_tokens.contains(t));
         let lexer_bytes = self.parser.has_pending_lexeme_bytes();
         let is_accepting = self.is_accepting();
-        self.parser.check_cancelled()?;
+        self.check_cancellation()?;
         let can_advance = self.parser.can_advance();
         let parser_done = is_accepting && (!can_advance || pending_eos);
         infoln!(

@@ -38,7 +38,8 @@ impl Matcher {
                     if parser.is_fresh() {
                         parser.start_without_prompt();
                     }
-                    Matcher(MatcherState::Normal(MatcherInner { parser }), None)
+                    let cancellation = parser.cancellation_handle();
+                    Matcher(MatcherState::Normal(MatcherInner { parser }), cancellation)
                 }
             }
             Err(e) => Matcher(MatcherState::Error(e.to_string()), None),

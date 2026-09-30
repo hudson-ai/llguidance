@@ -123,6 +123,35 @@ mod tests {
         parser
     }
 
+    fn interrupt_token_parser<T: Send + 'static>(
+        mut parser: crate::TokenParser,
+        operation: fn(&mut crate::TokenParser) -> anyhow::Result<T>,
+    ) -> (anyhow::Result<T>, crate::TokenParser) {
+        let handle = parser.cancellation_handle().unwrap();
+        let (reached_tx, reached_rx) = mpsc::sync_channel(0);
+        let (resume_tx, resume_rx) = mpsc::sync_channel(0);
+        let worker = thread::spawn(move || {
+            PROGRESS.with_borrow_mut(|progress| {
+                *progress = Some(Progress {
+                    point: "trie",
+                    work: 0,
+                    threshold: 1,
+                    reached: reached_tx,
+                    resume: resume_rx,
+                });
+            });
+            let result = operation(&mut parser);
+            (result, parser)
+        });
+
+        let reached = reached_rx.recv_timeout(Duration::from_secs(10));
+        handle.cancel();
+        let _ = resume_tx.send(());
+        let result = worker.join().unwrap();
+        reached.unwrap();
+        result
+    }
+
     #[test]
     fn forced_results_keep_failure_in_matcher_state() {
         let mut tested = matcher(r#"start: "abcdef""#, &[], true);
@@ -204,31 +233,37 @@ mod tests {
     #[test]
     fn token_parser_does_not_publish_mask_after_in_flight_cancellation() {
         let mut parser = token_parser("start: /[a-z]+/");
-        let handle = parser.enable_cancellation();
-        let (reached_tx, reached_rx) = mpsc::sync_channel(0);
-        let (resume_tx, resume_rx) = mpsc::sync_channel(0);
-        let worker = thread::spawn(move || {
-            PROGRESS.with_borrow_mut(|progress| {
-                *progress = Some(Progress {
-                    point: "trie",
-                    work: 0,
-                    threshold: 1,
-                    reached: reached_tx,
-                    resume: resume_rx,
-                });
-            });
-            let result = parser.compute_mask();
-            (result, parser)
-        });
-
-        let reached = reached_rx.recv_timeout(Duration::from_secs(10));
-        handle.cancel();
-        let _ = resume_tx.send(());
-        let (result, parser) = worker.join().unwrap();
-        reached.unwrap();
+        parser.enable_cancellation();
+        let (result, parser) = interrupt_token_parser(parser, crate::TokenParser::compute_mask);
 
         assert_cancelled(result);
         assert_eq!(parser.stop_reason(), StopReason::Cancelled);
+    }
+
+    #[test]
+    fn token_parser_does_not_publish_partial_validation_after_cancellation() {
+        let mut parser = token_parser("start: /[a-z]+/");
+        parser.enable_cancellation();
+        let (result, parser) = interrupt_token_parser(parser, |parser| {
+            parser.validate_tokens_raw(&[b'a' as u32; 32])
+        });
+
+        assert_cancelled(result);
+        assert_eq!(parser.stop_reason(), StopReason::Cancelled);
+    }
+
+    #[test]
+    fn matcher_adopts_token_parser_cancellation() {
+        let mut parser = token_parser("start: /[a-z]+/");
+        let handle = parser.enable_cancellation();
+        let mut matcher = Matcher::new(Ok(parser));
+        let mut independent = matcher.clone();
+
+        assert!(matcher.cancellation_handle().is_some());
+        handle.cancel();
+        assert!(matcher.is_cancelled());
+        assert_cancelled(matcher.compute_mask());
+        assert!(independent.compute_mask().is_ok());
     }
 
     #[test]
